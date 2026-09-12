@@ -3,7 +3,6 @@ import {
   ArrowDownUp,
   CalendarDays,
   Check,
-  ChevronLeft,
   ChevronRight,
   CircleDollarSign,
   ClipboardCheck,
@@ -18,6 +17,7 @@ import {
   Plus,
   Search,
   Shield,
+  Trash2,
   TrendingUp,
   Trophy,
   UserRound,
@@ -71,6 +71,9 @@ function App() {
   const [announcements, setAnnouncements] = useStoredState("sdfc-announcements-v2", []);
   const [clubLogo, setClubLogo] = useStoredState("sdfc-club-logo-v2", "");
   const [profileImage, setProfileImage] = useStoredState("sdfc-profile-image-v2", "");
+  const [profileImages, setProfileImages] = useStoredState("sdfc-player-images-v1", {});
+  const [fundRequirement, setFundRequirement] = useStoredState("sdfc-fund-requirement-v1", 0);
+  const [paymentRequests, setPaymentRequests] = useStoredState("sdfc-payment-requests-v1", []);
   const [selectedDate, setSelectedDate] = useState(today());
 
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
@@ -96,6 +99,14 @@ function App() {
   const addAnnouncement = (announcement) => {
     if (!announcement.text.trim()) return;
     setAnnouncements((current) => [{ id: crypto.randomUUID(), text: announcement.text.trim(), cadence: announcement.cadence, createdAt: new Date().toISOString() }, ...current]);
+  };
+
+  const deleteMember = (id) => setMembers((current) => current.filter((member) => member.id !== id));
+  const deleteAnnouncement = (id) => setAnnouncements((current) => current.filter((item) => item.id !== id));
+  const deleteFund = (id) => setFunds((current) => current.filter((item) => item.id !== id));
+  const approveRequest = (request) => {
+    setFunds((current) => [{ id: crypto.randomUUID(), player: request.player, amount: Number(request.amount), date: request.date, status: "Paid", note: `EasyPaisa verified (${request.reference || "no reference"})` }, ...current]);
+    setPaymentRequests((current) => current.filter((item) => item.id !== request.id));
   };
 
   const readImage = (event, setter) => {
@@ -145,17 +156,17 @@ function App() {
         </div>
         <nav className="nav-list">
           <small>MAIN MENU</small>
-          {navItems.filter((item) => isAdmin || item.id !== "funds").map(({ id, label, icon: Icon }) => (
+          {navItems.map(({ id, label, icon: Icon }) => (
             <button key={id} className={`nav-link ${active === id ? "active" : ""}`} onClick={() => { setActive(id); setMobileMenu(false); }}>
               <Icon size={18} /><span>{label}</span>
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <label className={`profile-mini profile-image-control ${!isAdmin ? "profile-readonly" : ""}`} title={isAdmin ? "Upload admin profile picture" : "Admin profile"}>
-            <div className={`avatar ${profileImage ? "avatar-image" : "avatar-green"}`}>{profileImage ? <img src={profileImage} alt="Mudasir Javid" /> : "MJ"}</div>
-            {isAdmin && <input type="file" accept="image/*" onChange={(event) => readImage(event, setProfileImage)} />}
-            <div><b>Mudasir Javid</b><span>Team admin</span></div>
+          <label className="profile-mini profile-image-control" title="Upload profile picture">
+            <div className={`avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : "avatar-green"}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div>
+            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
+            <div><b>{isAdmin ? ADMIN_NAME : currentMember?.name}</b><span>{isAdmin ? "Team admin" : currentMember?.position || "Squad member"}</span></div>
           </label>
           <div className="developer">Developer: <b>Mudasir Javid</b><button className="logout-button" onClick={logout}><LogOut size={13} /> Sign out</button></div>
         </div>
@@ -165,13 +176,13 @@ function App() {
         <header className="topbar">
           <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20} /></button>
           <div className="breadcrumb"><span>Team workspace</span><ChevronRight size={14} /><b>{navItems.find((item) => item.id === active)?.label}</b></div>
-          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Data saved locally</span><div className={`top-avatar ${profileImage ? "avatar-image" : ""}`}>{profileImage ? <img src={profileImage} alt="" /> : "MJ"}</div></div>
+          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Data saved locally</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
         </header>
 
         <div className="page-wrap">
-          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} />}
+          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} />}
           {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
-          {active === "funds" && isAdmin && <Funds members={members} funds={funds} setFunds={setFunds} totalCollected={totalCollected} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
+          {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={setFundRequirement} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
         </div>
       </main>
     </div>
@@ -209,7 +220,7 @@ function AnnouncementTicker({ announcements }) {
   return <div className="announcement-ticker"><Megaphone size={17} /><b>Announcement</b><span>{latest.text}</span></div>;
 }
 
-function Overview({ isAdmin, currentMember, members, present, totalCollected, setActive, addMember, match, setMatch, announcements, addAnnouncement }) {
+function Overview({ isAdmin, currentMember, members, present, totalCollected, setActive, addMember, deleteMember, match, setMatch, announcements, addAnnouncement, deleteAnnouncement }) {
   const [form, setForm] = useState({ name: "", position: "" });
   const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "" });
   const [announcementForm, setAnnouncementForm] = useState({ text: "", cadence: "Anytime" });
@@ -251,14 +262,14 @@ function Overview({ isAdmin, currentMember, members, present, totalCollected, se
         </section>
         <section className="panel match-panel">
           <div className="panel-heading"><div><h2>Next match</h2><p>Set your next fixture manually.</p></div><span className={`pill ${match ? "pill-green" : ""}`}>{match ? "SCHEDULED" : "NOT SET"}</span></div>
-          {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div></div>}
+          {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time} {isAdmin && <button className="delete-button" onClick={() => setMatch(null)}><Trash2 size={13} /></button>}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div></div>}
           {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
         </section>
       </div>
       {isAdmin && <section className="panel announcement-panel">
         <div className="panel-heading"><div><h2><Megaphone size={17} /> Announcements</h2><p>Publish updates for the whole team.</p></div><span className="pill">{announcements.length} published</span></div>
         <form className="announcement-form" onSubmit={submitAnnouncement}><input required value={announcementForm.text} onChange={(event) => setAnnouncementForm({ ...announcementForm, text: event.target.value })} placeholder="Write a team announcement..." /><select value={announcementForm.cadence} onChange={(event) => setAnnouncementForm({ ...announcementForm, cadence: event.target.value })}><option>Daily</option><option>Weekly</option><option>Anytime</option></select><button className="primary-button" type="submit"><Megaphone size={16} /> Publish</button></form>
-        {announcements.length === 0 ? <div className="empty-state compact-empty"><Megaphone size={22} /><b>No announcements yet</b><span>Publish an update above to show it here.</span></div> : <div className="announcement-list">{announcements.map((announcement) => <div className="announcement-item" key={announcement.id}><Megaphone size={17} /><div><b>{announcement.text}</b><span>{announcement.cadence} · {formatDate(announcement.createdAt.slice(0, 10))}</span></div></div>)}</div>}
+        {announcements.length === 0 ? <div className="empty-state compact-empty"><Megaphone size={22} /><b>No announcements yet</b><span>Publish an update above to show it here.</span></div> : <div className="announcement-list">{announcements.map((announcement) => <div className="announcement-item" key={announcement.id}><Megaphone size={17} /><div><b>{announcement.text}</b><span>{announcement.cadence} · {formatDate(announcement.createdAt.slice(0, 10))}</span></div><button className="delete-button" onClick={() => deleteAnnouncement(announcement.id)}><Trash2 size={14} /></button></div>)}</div>}
       </section>}
       {isAdmin && credentials && <div className="credential-notice"><b>Player credentials created</b><span>ID: {credentials.playerId} · Passcode: {credentials.passcode}</span><button onClick={() => setCredentials(null)}><X size={15} /></button></div>}
       {isAdmin && <section className="panel member-panel">
@@ -268,7 +279,7 @@ function Overview({ isAdmin, currentMember, members, present, totalCollected, se
           <label>Position / detail<input value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })} placeholder="e.g. Midfielder" /></label>
           <button className="primary-button" type="submit"><Plus size={17} /> Add member</button>
         </form>
-        {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><div className="avatar avatar-green">{member.initials}</div><div><b>{member.name}</b><span>{member.position || "Squad member"}</span></div></div>)}</div>}
+        {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><div className="avatar avatar-green">{member.initials}</div><div><b>{member.name}</b><span>{member.position || "Squad member"}</span><small>{member.playerId} · {member.passcode}</small></div><button className="delete-button" onClick={() => deleteMember(member.id)}><Trash2 size={14} /></button></div>)}</div>}
       </section>}
     </>
   );
@@ -279,20 +290,12 @@ function StatCard({ icon: Icon, label, value, detail, accent }) {
 }
 
 function Attendance({ isAdmin, currentMember, members, attendance, selectedDate, setSelectedDate, toggleAttendance, onExport }) {
-  const [month, setMonth] = useState(new Date(`${selectedDate}T00:00:00`));
-  const calendar = useMemo(() => buildCalendar(month), [month]);
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const marked = members.filter((player) => attendance[selectedDate]?.[player.id]).length;
   return (
     <>
       <PageHeading eyebrow="ATTENDANCE TRACKER" title="Present" description={isAdmin ? "Review the squad and export today's record." : "Mark your own attendance for today."} action={isAdmin && <button className="secondary-button" onClick={onExport}><Download size={17} /> Export report</button>} />
       <div className="attendance-layout">
-        <section className="panel calendar-panel">
-          <div className="panel-heading"><div><h2>Choose a date</h2><p>Tap a date to view or update attendance.</p></div><div className="calendar-nav"><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={17} /></button><b>{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</b><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={17} /></button></div></div>
-          <div className="weekdays">{["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((day) => <span key={day}>{day}</span>)}</div>
-          <div className="calendar-grid">{calendar.map((day, index) => <button key={`${day.date}-${index}`} disabled={!day.current} className={`calendar-day ${!day.current ? "muted-day" : ""} ${day.date === selectedDate ? "selected-day" : ""}`} onClick={() => day.current && setSelectedDate(day.date)}><span>{day.number}</span>{day.current && attendance[day.date] && <i className={Object.values(attendance[day.date]).includes("present") ? "has-present" : "has-marked"}></i>}</button>)}</div>
-          <div className="calendar-legend"><span><i className="legend-dot present-dot"></i>Attendance marked</span><span><i className="legend-dot selected-dot"></i>Selected date</span></div>
-        </section>
         <section className="panel attendance-summary">
           <div className="summary-date"><div className="date-icon"><CalendarDays size={19} /></div><div><span>{formatDate(selectedDate)}</span><b>Daily attendance</b></div></div>
           <div className="attendance-score"><div className="score-ring" style={{ "--progress": `${members.length ? (present / members.length) * 360 : 0}deg` }}><div><strong>{present}</strong><span>present</span></div></div><div><b>{members.length && marked === members.length ? "All players marked" : `${members.length - marked} players unmarked`}</b><span>out of {members.length} squad members</span></div></div>
@@ -301,31 +304,29 @@ function Attendance({ isAdmin, currentMember, members, attendance, selectedDate,
         </section>
       </div>
       {!isAdmin && currentMember && <section className="panel self-attendance"><div className="panel-heading"><div><h2>Your attendance</h2><p>{formatDate(today())} · {currentMember.name}</p></div><span className="pill">TODAY</span></div><div className="self-buttons"><button className={attendance[selectedDate]?.[currentMember.id] === "present" ? "status-present" : ""} onClick={() => toggleAttendance(currentMember.id, "present")}><Check size={18} /> Present</button><button className={attendance[selectedDate]?.[currentMember.id] === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(currentMember.id, "absent")}><X size={18} /> Absent</button></div></section>}
-      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Mukammal Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><div className={`avatar ${status === "present" ? "avatar-green" : "avatar-dark"}`}>{player.initials}</div><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
+      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Muqalam Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><div className={`avatar ${status === "present" ? "avatar-green" : "avatar-dark"}`}>{player.initials}</div><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
     </>
   );
 }
 
-function buildCalendar(month) {
-  const first = new Date(month.getFullYear(), month.getMonth(), 1);
-  const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  const previousDays = new Date(month.getFullYear(), month.getMonth(), 0).getDate();
-  return Array.from({ length: 42 }, (_, index) => { const number = index - first.getDay() + 1; const current = number > 0 && number <= days; const dateObj = current ? new Date(month.getFullYear(), month.getMonth(), number) : new Date(month.getFullYear(), month.getMonth(), number <= 0 ? 0 + number : days + (number - days)); return { number: current ? number : number <= 0 ? previousDays + number : number - days, current, date: dateObj.toISOString().slice(0, 10) }; });
-}
-
-function Funds({ members, funds, setFunds, totalCollected, onExport }) {
+function Funds({ isAdmin, currentMember, members, funds, setFunds, totalCollected, requirement, setRequirement, requests, setRequests, approveRequest, onDeleteFund, onExport }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ player: "", amount: "", date: today(), status: "Paid", note: "" });
+  const [requestForm, setRequestForm] = useState({ amount: "", reference: "" });
+  const [requirementInput, setRequirementInput] = useState(requirement || "");
   const filtered = useMemo(() => [...funds].filter((fund) => `${fund.player} ${fund.note} ${fund.status}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => sort === "amount" ? b.amount - a.amount : sort === "player" ? a.player.localeCompare(b.player) : new Date(b.date) - new Date(a.date)), [funds, search, sort]);
   const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; setFunds((current) => [{ ...form, id: Date.now(), amount: Number(form.amount) }, ...current]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); };
+  const submitRequest = (event) => { event.preventDefault(); if (!requestForm.amount || !currentMember) return; setRequests((current) => [{ ...requestForm, id: crypto.randomUUID(), player: currentMember.name, playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }, ...current]); setRequestForm({ amount: "", reference: "" }); };
   return (
     <>
-      <PageHeading eyebrow="FUND COLLECTION" title="Fund" description="A transparent, simple way to manage the team fund." action={<div className="heading-actions"><button className="secondary-button" onClick={onExport}><Download size={17} /> Export report</button><button className="primary-button" onClick={() => setShowForm(!showForm)}><Plus size={17} /> Add contribution</button></div>} />
-      <div className="fund-hero"><div className="fund-hero-copy"><div className="fund-icon"><CircleDollarSign size={25} /></div><div><span>Total collected</span><strong>{money(totalCollected)}</strong><small><TrendingUp size={13} /> Team fund is growing steadily</small></div></div><div className="fund-progress"><div className="progress-label"><span>Monthly target</span><b>{Math.min(100, Math.round((totalCollected / 20000) * 100))}%</b></div><div className="progress-track"><span style={{ width: `${Math.min(100, (totalCollected / 20000) * 100)}%` }}></span></div><small>{money(Math.max(0, 20000 - totalCollected))} remaining to reach target</small></div></div>
+      <PageHeading eyebrow="FUND COLLECTION" title="Fund" description="A transparent, simple way to manage the team fund." action={<div className="heading-actions">{isAdmin && <><button className="secondary-button" onClick={onExport}><Download size={17} /> Export report</button><button className="primary-button" onClick={() => setShowForm(!showForm)}><Plus size={17} /> Add contribution</button></>}</div>} />
+      <div className="fund-hero"><div className="fund-hero-copy"><div className="fund-icon"><CircleDollarSign size={25} /></div><div><span>Total collected</span><strong>{money(totalCollected)}</strong><small><TrendingUp size={13} /> Official verified contributions</small></div></div></div>
+      {isAdmin ? <section className="panel fund-settings"><div className="panel-heading"><div><h2>Fund requirement</h2><p>Set the team-wide dues amount and payment instruction.</p></div><span className="pill">EasyPaisa</span></div><form className="requirement-form" onSubmit={(event) => { event.preventDefault(); setRequirement(Number(requirementInput) || 0); }}><label>Team requirement (PKR)<input type="number" min="0" value={requirementInput} onChange={(event) => setRequirementInput(event.target.value)} placeholder="e.g. 20000" /></label><div className="payment-instructions"><b>Send payments via EasyPaisa</b><strong>03169057203</strong></div><button className="primary-button" type="submit"><Check size={16} /> Save requirement</button></form></section> : <section className="panel fund-settings"><div className="payment-instructions"><b>Send your payment via EasyPaisa</b><strong>03169057203</strong><span>Team requirement: {money(requirement || 0)}</span></div><form className="request-form" onSubmit={submitRequest}><input required type="number" min="1" placeholder="Amount paid (PKR)" value={requestForm.amount} onChange={(event) => setRequestForm({ ...requestForm, amount: event.target.value })} /><input placeholder="EasyPaisa reference (optional)" value={requestForm.reference} onChange={(event) => setRequestForm({ ...requestForm, reference: event.target.value })} /><button className="primary-button" type="submit"><Check size={16} /> Submit payment request</button></form></section>}
+      {isAdmin && requests.length > 0 && <section className="panel request-panel"><div className="panel-heading"><div><h2>Payment requests</h2><p>Verify EasyPaisa payments before adding them to the ledger.</p></div><span className="pill">{requests.length} pending</span></div>{requests.map((request) => <div className="request-row" key={request.id}><div><b>{request.player}</b><span>{money(request.amount)} · {formatDate(request.date)} · Ref: {request.reference || "—"}</span></div><button className="primary-button" onClick={() => approveRequest(request)}><Check size={15} /> Approve / Verify</button></div>)}</section>}
       {showForm && <section className="panel form-panel"><div className="panel-heading"><div><h2>New contribution</h2><p>Record a payment in the team ledger.</p></div><button className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button></div><form className="fund-form" onSubmit={submit}><label>Player name<select required value={form.player} onChange={(e) => setForm({ ...form, player: e.target.value })}><option value="">Select player</option>{members.map((player) => <option value={player.name} key={player.id}>{player.name}</option>)}</select></label><label>Amount (PKR)<input required type="number" min="1" placeholder="e.g. 1500" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label>Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label><label>Payment status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Paid</option><option>Pending</option></select></label><label className="wide-field">Note (optional)<input placeholder="Add a note..." value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label><button className="primary-button submit-fund" type="submit" disabled={!members.length}><Check size={17} /> Save contribution</button></form>{!members.length && <div className="form-hint">Add a squad member before recording a contribution.</div>}</section>}
-      <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th></tr></thead><tbody>{filtered.map((fund) => <tr key={fund.id}><td><div className="table-player"><div className="avatar avatar-dark">{fund.player.split(" ").map((word) => word[0]).join("").slice(0, 2)}</div><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>
+      {isAdmin && <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead><tbody>{filtered.map((fund) => <tr key={fund.id}><td><div className="table-player"><div className="avatar avatar-dark">{fund.player.split(" ").map((word) => word[0]).join("").slice(0, 2)}</div><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td><td><button className="delete-button" onClick={() => onDeleteFund(fund.id)}><Trash2 size={14} /></button></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>}
     </>
   );
 }
