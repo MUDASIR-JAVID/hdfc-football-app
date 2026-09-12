@@ -10,6 +10,9 @@ import {
   Clock3,
   Download,
   LayoutDashboard,
+  LogIn,
+  LogOut,
+  LockKeyhole,
   Menu,
   Megaphone,
   Plus,
@@ -40,6 +43,8 @@ const getGreeting = () => {
   if (hour < 22) return "Good evening";
   return "Good night";
 };
+const ADMIN_NAME = "Mudasir Javid";
+const ADMIN_PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE || "SDFC-ADMIN";
 
 function useStoredState(key, initial) {
   const [value, setValue] = useState(() => {
@@ -55,6 +60,7 @@ function useStoredState(key, initial) {
 }
 
 function App() {
+  const [auth, setAuth] = useStoredState("sdfc-auth-v3", null);
   const [active, setActive] = useState("overview");
   const [mobileMenu, setMobileMenu] = useState(false);
   // Versioned keys intentionally start empty so the former demo records cannot leak into the real squad.
@@ -81,7 +87,10 @@ function App() {
     const name = member.name.trim();
     if (!name) return;
     const initials = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-    setMembers((current) => [...current, { ...member, id: crypto.randomUUID(), name, initials }]);
+    const playerId = `SDFC-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    const passcode = Math.random().toString(36).slice(2, 8).toUpperCase();
+    setMembers((current) => [...current, { ...member, id: crypto.randomUUID(), playerId, passcode, name, initials }]);
+    return { playerId, passcode };
   };
 
   const addAnnouncement = (announcement) => {
@@ -112,13 +121,21 @@ function App() {
     { id: "funds", label: "Fund", icon: WalletCards },
   ];
 
+  if (!auth) {
+    return <LoginScreen members={members} onLogin={setAuth} />;
+  }
+
+  const isAdmin = auth.role === "admin";
+  const currentMember = members.find((member) => member.playerId === auth.playerId);
+  const logout = () => setAuth(null);
+
   return (
     <div className="app-shell">
       <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
         <div className="brand">
-          <label className="brand-mark brand-image-control" title="Upload team logo">
+          <label className={`brand-mark brand-image-control ${!isAdmin ? "brand-readonly" : ""}`} title={isAdmin ? "Upload team logo" : "SDFC logo"}>
             {clubLogo ? <img src={clubLogo} alt="SDFC logo" /> : <Shield size={22} fill="currentColor" />}
-            <input type="file" accept="image/*" onChange={(event) => readImage(event, setClubLogo)} />
+            {isAdmin && <input type="file" accept="image/*" onChange={(event) => readImage(event, setClubLogo)} />}
           </label>
           <div><strong>SDFC</strong><span>Football Club</span></div>
         </div>
@@ -128,19 +145,19 @@ function App() {
         </div>
         <nav className="nav-list">
           <small>MAIN MENU</small>
-          {navItems.map(({ id, label, icon: Icon }) => (
+          {navItems.filter((item) => isAdmin || item.id !== "funds").map(({ id, label, icon: Icon }) => (
             <button key={id} className={`nav-link ${active === id ? "active" : ""}`} onClick={() => { setActive(id); setMobileMenu(false); }}>
               <Icon size={18} /><span>{label}</span>
             </button>
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <label className="profile-mini profile-image-control" title="Upload admin profile picture">
+          <label className={`profile-mini profile-image-control ${!isAdmin ? "profile-readonly" : ""}`} title={isAdmin ? "Upload admin profile picture" : "Admin profile"}>
             <div className={`avatar ${profileImage ? "avatar-image" : "avatar-green"}`}>{profileImage ? <img src={profileImage} alt="Mudasir Javid" /> : "MJ"}</div>
-            <input type="file" accept="image/*" onChange={(event) => readImage(event, setProfileImage)} />
+            {isAdmin && <input type="file" accept="image/*" onChange={(event) => readImage(event, setProfileImage)} />}
             <div><b>Mudasir Javid</b><span>Team admin</span></div>
           </label>
-          <div className="developer">Developer: <b>Mudasir Javid</b></div>
+          <div className="developer">Developer: <b>Mudasir Javid</b><button className="logout-button" onClick={logout}><LogOut size={13} /> Sign out</button></div>
         </div>
       </aside>
 
@@ -152,27 +169,55 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {active === "overview" && <Overview members={members} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} />}
-          {active === "attendance" && <Attendance members={members} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
-          {active === "funds" && <Funds members={members} funds={funds} setFunds={setFunds} totalCollected={totalCollected} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
+          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} />}
+          {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
+          {active === "funds" && isAdmin && <Funds members={members} funds={funds} setFunds={setFunds} totalCollected={totalCollected} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
         </div>
       </main>
     </div>
   );
 }
 
+function LoginScreen({ members, onLogin }) {
+  const [mode, setMode] = useState("player");
+  const [credential, setCredential] = useState("");
+  const [error, setError] = useState("");
+  const submit = (event) => {
+    event.preventDefault();
+    const value = credential.trim();
+    if (mode === "admin" && value === ADMIN_PASSCODE) {
+      onLogin({ role: "admin", name: ADMIN_NAME });
+      return;
+    }
+    const member = members.find((item) => item.playerId === value || item.passcode === value);
+    if (mode === "player" && member) {
+      onLogin({ role: "player", playerId: member.playerId, name: member.name });
+      return;
+    }
+    setError(mode === "admin" ? "Invalid admin passcode." : "Invalid Player ID or passcode.");
+  };
+  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID or passcode"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter admin passcode" : "e.g. SDFC-ABC123"} /></label><button className="primary-button auth-submit" type="submit"><LogIn size={17} /> Sign in</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{mode === "admin" ? "Admin credentials are configured with VITE_ADMIN_PASSCODE." : "Ask the admin for your generated Player ID or passcode."}</small></div></div>;
+}
+
 function PageHeading({ eyebrow, title, description, action }) {
   return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action}</div>;
 }
 
-function Overview({ members, present, totalCollected, setActive, addMember, match, setMatch, announcements, addAnnouncement }) {
+function AnnouncementTicker({ announcements }) {
+  const latest = announcements[0];
+  if (!latest) return null;
+  return <div className="announcement-ticker"><Megaphone size={17} /><b>Announcement</b><span>{latest.text}</span></div>;
+}
+
+function Overview({ isAdmin, currentMember, members, present, totalCollected, setActive, addMember, match, setMatch, announcements, addAnnouncement }) {
   const [form, setForm] = useState({ name: "", position: "" });
   const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "" });
   const [announcementForm, setAnnouncementForm] = useState({ text: "", cadence: "Anytime" });
+  const [credentials, setCredentials] = useState(null);
   const submitMember = (event) => {
     event.preventDefault();
     if (!form.name.trim()) return;
-    addMember(form);
+    setCredentials(addMember(form));
     setForm({ name: "", position: "" });
   };
   const submitMatch = (event) => {
@@ -188,7 +233,8 @@ function Overview({ members, present, totalCollected, setActive, addMember, matc
   };
   return (
     <>
-      <PageHeading eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()).toUpperCase()} title={`${getGreeting()}, SDFC 👋`} description="Here is what is happening with SDFC today." action={<button className="primary-button" onClick={() => setActive("attendance")}><Plus size={17} /> Mark attendance</button>} />
+      <AnnouncementTicker announcements={announcements} />
+      <PageHeading eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()).toUpperCase()} title={`${getGreeting()}, SDFC 👋`} description={isAdmin ? "Here is what is happening with SDFC today." : `Welcome, ${currentMember?.name || "player"}. You can view the team and mark your own attendance.`} action={<button className="primary-button" onClick={() => setActive("attendance")}><Plus size={17} /> Mark attendance</button>} />
       <div className="stat-grid">
         <StatCard icon={ClipboardCheck} label="Today's attendance" value={`${present}/${members.length}`} detail={present ? `${Math.round((present / members.length) * 100)}% of team present` : "No attendance marked yet"} accent="green" />
         <StatCard icon={CircleDollarSign} label="Total fund collected" value={money(totalCollected)} detail="+12.5% from last month" accent="blue" />
@@ -199,22 +245,23 @@ function Overview({ members, present, totalCollected, setActive, addMember, matc
         <section className="panel">
           <div className="panel-heading"><div><h2>Quick actions</h2><p>Keep your team records up to date.</p></div></div>
           <div className="quick-actions">
-            <button onClick={() => setActive("attendance")} className="quick-card quick-green"><div className="quick-icon"><ClipboardCheck size={22} /></div><b>Present</b><span>Mark today&apos;s attendance</span><ChevronRight size={17} /></button>
-            <button onClick={() => setActive("funds")} className="quick-card quick-blue"><div className="quick-icon"><WalletCards size={22} /></div><b>Fund</b><span>Record a contribution</span><ChevronRight size={17} /></button>
+              <button onClick={() => setActive("attendance")} className="quick-card quick-green"><div className="quick-icon"><ClipboardCheck size={22} /></div><b>Present</b><span>Mark today&apos;s attendance</span><ChevronRight size={17} /></button>
+              {isAdmin && <button onClick={() => setActive("funds")} className="quick-card quick-blue"><div className="quick-icon"><WalletCards size={22} /></div><b>Fund</b><span>Manage contributions</span><ChevronRight size={17} /></button>}
           </div>
         </section>
         <section className="panel match-panel">
           <div className="panel-heading"><div><h2>Next match</h2><p>Set your next fixture manually.</p></div><span className={`pill ${match ? "pill-green" : ""}`}>{match ? "SCHEDULED" : "NOT SET"}</span></div>
           {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div></div>}
-          <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>
+          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
         </section>
       </div>
-      <section className="panel announcement-panel">
+      {isAdmin && <section className="panel announcement-panel">
         <div className="panel-heading"><div><h2><Megaphone size={17} /> Announcements</h2><p>Publish updates for the whole team.</p></div><span className="pill">{announcements.length} published</span></div>
         <form className="announcement-form" onSubmit={submitAnnouncement}><input required value={announcementForm.text} onChange={(event) => setAnnouncementForm({ ...announcementForm, text: event.target.value })} placeholder="Write a team announcement..." /><select value={announcementForm.cadence} onChange={(event) => setAnnouncementForm({ ...announcementForm, cadence: event.target.value })}><option>Daily</option><option>Weekly</option><option>Anytime</option></select><button className="primary-button" type="submit"><Megaphone size={16} /> Publish</button></form>
         {announcements.length === 0 ? <div className="empty-state compact-empty"><Megaphone size={22} /><b>No announcements yet</b><span>Publish an update above to show it here.</span></div> : <div className="announcement-list">{announcements.map((announcement) => <div className="announcement-item" key={announcement.id}><Megaphone size={17} /><div><b>{announcement.text}</b><span>{announcement.cadence} · {formatDate(announcement.createdAt.slice(0, 10))}</span></div></div>)}</div>}
-      </section>
-      <section className="panel member-panel">
+      </section>}
+      {isAdmin && credentials && <div className="credential-notice"><b>Player credentials created</b><span>ID: {credentials.playerId} · Passcode: {credentials.passcode}</span><button onClick={() => setCredentials(null)}><X size={15} /></button></div>}
+      {isAdmin && <section className="panel member-panel">
         <div className="panel-heading"><div><h2>Add new player / member</h2><p>Add a squad member to start tracking attendance and contributions.</p></div><span className="pill">{members.length} active</span></div>
         <form className="member-form" onSubmit={submitMember}>
           <label>Player name<input required value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Enter full name" /></label>
@@ -222,7 +269,7 @@ function Overview({ members, present, totalCollected, setActive, addMember, matc
           <button className="primary-button" type="submit"><Plus size={17} /> Add member</button>
         </form>
         {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><div className="avatar avatar-green">{member.initials}</div><div><b>{member.name}</b><span>{member.position || "Squad member"}</span></div></div>)}</div>}
-      </section>
+      </section>}
     </>
   );
 }
@@ -231,14 +278,14 @@ function StatCard({ icon: Icon, label, value, detail, accent }) {
   return <div className={`stat-card accent-${accent}`}><div className="stat-top"><div className="stat-icon"><Icon size={19} /></div><span className="stat-menu">•••</span></div><span className="stat-label">{label}</span><strong>{value}</strong><small>{detail}</small></div>;
 }
 
-function Attendance({ members, attendance, selectedDate, setSelectedDate, toggleAttendance, onExport }) {
+function Attendance({ isAdmin, currentMember, members, attendance, selectedDate, setSelectedDate, toggleAttendance, onExport }) {
   const [month, setMonth] = useState(new Date(`${selectedDate}T00:00:00`));
   const calendar = useMemo(() => buildCalendar(month), [month]);
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const marked = members.filter((player) => attendance[selectedDate]?.[player.id]).length;
   return (
     <>
-      <PageHeading eyebrow="ATTENDANCE TRACKER" title="Present" description="Keep your squad attendance organized, one matchday at a time." action={<button className="secondary-button" onClick={onExport}><Download size={17} /> Export report</button>} />
+      <PageHeading eyebrow="ATTENDANCE TRACKER" title="Present" description={isAdmin ? "Review the squad and export today's record." : "Mark your own attendance for today."} action={isAdmin && <button className="secondary-button" onClick={onExport}><Download size={17} /> Export report</button>} />
       <div className="attendance-layout">
         <section className="panel calendar-panel">
           <div className="panel-heading"><div><h2>Choose a date</h2><p>Tap a date to view or update attendance.</p></div><div className="calendar-nav"><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}><ChevronLeft size={17} /></button><b>{month.toLocaleDateString("en", { month: "long", year: "numeric" })}</b><button onClick={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}><ChevronRight size={17} /></button></div></div>
@@ -253,7 +300,8 @@ function Attendance({ members, attendance, selectedDate, setSelectedDate, toggle
           <div className="summary-stats"><div><b>{present}</b><span>Present</span></div><div><b>{members.length - present}</b><span>Absent / pending</span></div><div><b>{marked}</b><span>Marked</span></div></div>
         </section>
       </div>
-      <section className="panel player-panel"><div className="panel-heading"><div><h2>Mukammal Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><div className={`avatar ${status === "present" ? "avatar-green" : "avatar-dark"}`}>{player.initials}</div><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>
+      {!isAdmin && currentMember && <section className="panel self-attendance"><div className="panel-heading"><div><h2>Your attendance</h2><p>{formatDate(today())} · {currentMember.name}</p></div><span className="pill">TODAY</span></div><div className="self-buttons"><button className={attendance[selectedDate]?.[currentMember.id] === "present" ? "status-present" : ""} onClick={() => toggleAttendance(currentMember.id, "present")}><Check size={18} /> Present</button><button className={attendance[selectedDate]?.[currentMember.id] === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(currentMember.id, "absent")}><X size={18} /> Absent</button></div></section>}
+      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Mukammal Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><div className={`avatar ${status === "present" ? "avatar-green" : "avatar-dark"}`}>{player.initials}</div><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
     </>
   );
 }
