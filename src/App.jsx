@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
-  CheckCircle,
   ClipboardCheck,
   Clock3,
   Download,
@@ -178,7 +177,6 @@ function App() {
             <div><b>{isAdmin ? ADMIN_NAME : currentMember?.name}</b><span>{isAdmin ? "Team admin" : currentMember?.position || "Squad member"}</span></div>
             <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
           </label>
-          {isAdmin && <label className="wallpaper-control" title="Upload background wallpaper"><Settings size={14} /><input type="file" accept="image/*" onChange={(event) => readImage(event, setWallpaper)} /></label>}
           <div className="developer">Developer: <b>Mudasir Javid</b><button className="logout-button" onClick={logout}><LogOut size={13} /> Sign out</button></div>
         </div>
       </aside>
@@ -191,7 +189,7 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} />}
+          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} wallpaper={wallpaper} setWallpaper={setWallpaper} />}
           {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
           {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={setFundRequirement} easyPaisaNumber={easyPaisaNumber} setEasyPaisaNumber={setEasyPaisaNumber} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
           {active === "chat" && <Chat isAdmin={isAdmin} profileImage={profileImage} currentMember={currentMember} members={members} profileImages={profileImages} messages={chatMessages} setMessages={setChatMessages} />}
@@ -232,7 +230,7 @@ function AnnouncementTicker({ announcements }) {
   return <div className="announcement-ticker"><Megaphone size={17} /><b>Announcement</b><span>{latest.text}</span></div>;
 }
 
-function Overview({ isAdmin, currentMember, members, profileImages, profileImage, present, totalCollected, setActive, addMember, deleteMember, match, setMatch, announcements, addAnnouncement, deleteAnnouncement }) {
+function Overview({ isAdmin, currentMember, members, profileImages, profileImage, present, totalCollected, setActive, addMember, deleteMember, match, setMatch, announcements, addAnnouncement, deleteAnnouncement, wallpaper, setWallpaper }) {
   const [form, setForm] = useState({ name: "", position: "" });
   const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "", lineup: match?.lineup || [] });
   const [announcementForm, setAnnouncementForm] = useState({ text: "", cadence: "Anytime" });
@@ -276,7 +274,7 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
         <section className="panel match-panel">
           <div className="panel-heading"><div><h2>Next match</h2><p>Set your next fixture manually.</p></div><span className={`pill ${match ? "pill-green" : ""}`}>{match ? "SCHEDULED" : "NOT SET"}</span></div>
           {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time} {isAdmin && <button className="delete-button" onClick={() => setMatch(null)}><Trash2 size={13} /></button>}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div><div className="lineup-preview"><b>Selected lineup ({match.lineup?.length || 0})</b><div>{(match.lineup || []).map((id) => { const player = members.find((item) => item.id === id); return player && <span className="lineup-chip" key={id}><Avatar member={player} image={profileImages[player.id]} />{player.name}</span>; })}</div></div></div>}
-          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><label className="lineup-select">Lineup ({matchForm.lineup.length}/14)<select multiple value={matchForm.lineup} onChange={(event) => { const lineup = [...event.target.selectedOptions].map((option) => option.value); if (lineup.length <= 14) setMatchForm({ ...matchForm, lineup }); }} >{members.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
+          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><fieldset className="lineup-select"><legend>Manual lineup ({matchForm.lineup.length}/14)</legend><div className="lineup-checkboxes">{members.length === 0 ? <span className="form-hint">Add registered players first.</span> : members.map((player) => <label key={player.id}><input type="checkbox" checked={matchForm.lineup.includes(player.id)} onChange={() => setMatchForm((current) => current.lineup.includes(player.id) ? { ...current, lineup: current.lineup.filter((id) => id !== player.id) } : current.lineup.length < 14 ? { ...current, lineup: [...current.lineup, player.id] } : current)} /><span>{player.name}</span></label>)}</div></fieldset><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
         </section>
       </div>
       {isAdmin && <section className="panel announcement-panel">
@@ -294,8 +292,21 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
         </form>
         {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><Avatar member={member} image={profileImages[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span><small>{member.playerId} · {member.passcode}</small></div><button className="delete-button" onClick={() => deleteMember(member.id)}><Trash2 size={14} /></button></div>)}</div>}
       </section>}
+      {isAdmin && <AdminBackgroundControl wallpaper={wallpaper} setWallpaper={setWallpaper} />}
     </>
   );
+}
+
+function AdminBackgroundControl({ wallpaper, setWallpaper }) {
+  const [open, setOpen] = useState(false);
+  const readWallpaper = (event) => {
+    const file = event.target.files?.[0];
+    if (!file || !file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => setWallpaper(reader.result);
+    reader.readAsDataURL(file);
+  };
+  return <div className="admin-background-wrap"><button className="secondary-button admin-background-toggle" onClick={() => setOpen((current) => !current)}><Settings size={16} /> Admin background</button>{open && <section className="panel admin-background-panel"><div><h2>Admin controls</h2><p>Upload or change the team workspace wallpaper. Changes are saved on this device.</p></div><div className="admin-background-actions"><label className="secondary-button upload-wallpaper"> <Download size={15} /> {wallpaper ? "Change wallpaper" : "Upload wallpaper"}<input type="file" accept="image/*" onChange={readWallpaper} /></label>{wallpaper && <button className="delete-button reset-wallpaper" onClick={() => setWallpaper("")}><Trash2 size={15} /> Reset background</button>}</div></section>}</div>;
 }
 
 function StatCard({ icon: Icon, label, value, detail, accent }) {
@@ -335,13 +346,11 @@ function Chat({ isAdmin, profileImage, currentMember, members, profileImages, me
   const sendMessage = (event) => {
     event.preventDefault();
     if (!text.trim()) return;
-    setMessages((current) => [...current, { id: crypto.randomUUID(), text: text.trim(), author: isAdmin ? ADMIN_NAME : currentMember.name, playerId: currentMember?.id, role: isAdmin ? "admin" : "player", status: isAdmin ? "approved" : "pending", createdAt: new Date().toISOString() }]);
+    setMessages((current) => [...current, { id: crypto.randomUUID(), text: text.trim(), author: isAdmin ? ADMIN_NAME : currentMember.name, playerId: currentMember?.id, role: isAdmin ? "admin" : "player", createdAt: new Date().toISOString() }]);
     setText("");
   };
-  const approve = (id) => setMessages((current) => current.map((message) => message.id === id ? { ...message, status: "approved" } : message));
   const remove = (id) => setMessages((current) => current.filter((message) => message.id !== id));
-  const visible = messages.filter((message) => message.status === "approved" || (isAdmin && message.role === "admin"));
-  return <><PageHeading eyebrow="TEAM CHAT" title="Chat" description={isAdmin ? "Messages from players wait for your approval before appearing to the team." : "Share updates with the team. Admin approval keeps chat moderated."} /><section className="panel chat-panel"><div className="chat-list">{visible.length === 0 && <div className="empty-state"><MessageCircle size={22} /><b>No messages yet</b><span>Start the team conversation.</span></div>}{visible.map((message) => { const member = members.find((item) => item.id === message.playerId); return <div className={`chat-message ${message.role === "admin" ? "chat-admin" : ""}`} key={message.id}><Avatar member={member || { name: message.author, initials: "MJ" }} image={message.role === "admin" ? profileImage : profileImages[message.playerId]} /><div className="chat-bubble"><b>{message.author}{message.role === "admin" && " · Admin"}</b><span>{message.text}</span><small>{new Date(message.createdAt).toLocaleString()}</small></div>{isAdmin && <button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button>}</div>; })}</div><form className="chat-form" onSubmit={sendMessage}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a message..." /><button className="primary-button" type="submit"><Send size={16} /> Send</button></form></section>{isAdmin && messages.some((message) => message.role === "player" && message.status === "pending") && <section className="panel moderation-panel"><div className="panel-heading"><div><h2>Approval queue</h2><p>Review player messages before publishing.</p></div><span className="pill pill-yellow">{messages.filter((message) => message.status === "pending").length} pending</span></div>{messages.filter((message) => message.role === "player" && message.status === "pending").map((message) => <div className="moderation-row" key={message.id}><span><b>{message.author}</b>{message.text}</span><button className="primary-button" onClick={() => approve(message.id)}><CheckCircle size={15} /> Approve</button><button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button></div>)}</section>}</>;
+  return <><PageHeading eyebrow="TEAM CHAT" title="Chat" description="Messages are shared with the whole team immediately. Admins can delete messages." /><section className="panel chat-panel"><div className="chat-list">{messages.length === 0 && <div className="empty-state"><MessageCircle size={22} /><b>No messages yet</b><span>Start the team conversation.</span></div>}{messages.map((message) => { const member = members.find((item) => item.id === message.playerId); return <div className={`chat-message ${message.role === "admin" ? "chat-admin" : ""}`} key={message.id}><Avatar member={member || { name: message.author, initials: "MJ" }} image={message.role === "admin" ? profileImage : profileImages[message.playerId]} /><div className="chat-bubble"><b>{message.author}{message.role === "admin" && " · Admin"}</b><span>{message.text}</span><small>{new Date(message.createdAt).toLocaleString()}</small></div>{isAdmin && <button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button>}</div>; })}</div><form className="chat-form" onSubmit={sendMessage}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a message..." /><button className="primary-button" type="submit"><Send size={16} /> Send</button></form></section></>;
 }
 
 function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds, totalCollected, requirement, setRequirement, easyPaisaNumber, setEasyPaisaNumber, requests, setRequests, approveRequest, onDeleteFund, onExport }) {
