@@ -5,6 +5,7 @@ import {
   Check,
   ChevronRight,
   CircleDollarSign,
+  CheckCircle,
   ClipboardCheck,
   Clock3,
   Download,
@@ -13,15 +14,19 @@ import {
   LogOut,
   LockKeyhole,
   Menu,
+  MessageCircle,
   Megaphone,
   Plus,
   Search,
+  Send,
+  Settings,
   Shield,
   Trash2,
   TrendingUp,
   Trophy,
   UserRound,
   Users,
+  Wifi,
   WalletCards,
   X,
 } from "lucide-react";
@@ -74,6 +79,8 @@ function App() {
   const [profileImages, setProfileImages] = useStoredState("sdfc-player-images-v1", {});
   const [fundRequirement, setFundRequirement] = useStoredState("sdfc-fund-requirement-v1", 0);
   const [paymentRequests, setPaymentRequests] = useStoredState("sdfc-payment-requests-v1", []);
+  const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
+  const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
 
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
@@ -130,6 +137,7 @@ function App() {
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "attendance", label: "Present", icon: ClipboardCheck },
     { id: "funds", label: "Fund", icon: WalletCards },
+    { id: "chat", label: "Chat", icon: MessageCircle },
   ];
 
   if (!auth) {
@@ -141,7 +149,7 @@ function App() {
   const logout = () => setAuth(null);
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" style={wallpaper ? { backgroundImage: `linear-gradient(#090b11cc,#090b11ee), url(${wallpaper})` } : undefined}>
       <aside className={`sidebar ${mobileMenu ? "sidebar-open" : ""}`}>
         <div className="brand">
           <label className={`brand-mark brand-image-control ${!isAdmin ? "brand-readonly" : ""}`} title={isAdmin ? "Upload team logo" : "SDFC logo"}>
@@ -167,7 +175,9 @@ function App() {
             <div className={`avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : "avatar-green"}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div>
             <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
             <div><b>{isAdmin ? ADMIN_NAME : currentMember?.name}</b><span>{isAdmin ? "Team admin" : currentMember?.position || "Squad member"}</span></div>
+            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
           </label>
+          {isAdmin && <label className="wallpaper-control" title="Upload background wallpaper"><Settings size={14} /><input type="file" accept="image/*" onChange={(event) => readImage(event, setWallpaper)} /></label>}
           <div className="developer">Developer: <b>Mudasir Javid</b><button className="logout-button" onClick={logout}><LogOut size={13} /> Sign out</button></div>
         </div>
       </aside>
@@ -180,9 +190,10 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} />}
-          {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
-          {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={setFundRequirement} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
+          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} />}
+          {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
+          {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={setFundRequirement} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
+          {active === "chat" && <Chat isAdmin={isAdmin} profileImage={profileImage} currentMember={currentMember} members={members} profileImages={profileImages} messages={chatMessages} setMessages={setChatMessages} />}
         </div>
       </main>
     </div>
@@ -220,9 +231,9 @@ function AnnouncementTicker({ announcements }) {
   return <div className="announcement-ticker"><Megaphone size={17} /><b>Announcement</b><span>{latest.text}</span></div>;
 }
 
-function Overview({ isAdmin, currentMember, members, present, totalCollected, setActive, addMember, deleteMember, match, setMatch, announcements, addAnnouncement, deleteAnnouncement }) {
+function Overview({ isAdmin, currentMember, members, profileImages, profileImage, present, totalCollected, setActive, addMember, deleteMember, match, setMatch, announcements, addAnnouncement, deleteAnnouncement }) {
   const [form, setForm] = useState({ name: "", position: "" });
-  const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "" });
+  const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "", lineup: match?.lineup || [] });
   const [announcementForm, setAnnouncementForm] = useState({ text: "", cadence: "Anytime" });
   const [credentials, setCredentials] = useState(null);
   const submitMember = (event) => {
@@ -234,7 +245,7 @@ function Overview({ isAdmin, currentMember, members, present, totalCollected, se
   const submitMatch = (event) => {
     event.preventDefault();
     if (!matchForm.opponent.trim() || !matchForm.date || !matchForm.time) return;
-    setMatch({ opponent: matchForm.opponent.trim(), date: matchForm.date, time: matchForm.time });
+    setMatch({ opponent: matchForm.opponent.trim(), date: matchForm.date, time: matchForm.time, lineup: matchForm.lineup });
   };
   const submitAnnouncement = (event) => {
     event.preventDefault();
@@ -248,11 +259,12 @@ function Overview({ isAdmin, currentMember, members, present, totalCollected, se
       <PageHeading eyebrow={new Intl.DateTimeFormat("en", { weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(new Date()).toUpperCase()} title={`${getGreeting()}, SDFC 👋`} description={isAdmin ? "Here is what is happening with SDFC today." : `Welcome, ${currentMember?.name || "player"}. You can view the team and mark your own attendance.`} action={<button className="primary-button" onClick={() => setActive("attendance")}><Plus size={17} /> Mark attendance</button>} />
       <div className="stat-grid">
         <StatCard icon={ClipboardCheck} label="Today's attendance" value={`${present}/${members.length}`} detail={present ? `${Math.round((present / members.length) * 100)}% of team present` : "No attendance marked yet"} accent="green" />
-        <StatCard icon={CircleDollarSign} label="Total fund collected" value={money(totalCollected)} detail="+12.5% from last month" accent="blue" />
+        <StatCard icon={CircleDollarSign} label="Total fund collected" value={money(totalCollected)} detail="Verified team contributions" accent="blue" />
         <StatCard icon={Users} label="Active players" value={members.length} detail="Add your squad members below" accent="purple" />
         <StatCard icon={TrendingUp} label="Team attendance" value={members.length ? `${Math.round((present / members.length) * 100)}%` : "0%"} detail="Today's attendance" accent="orange" />
       </div>
       <div className="content-grid overview-grid">
+        <OnlineMembers members={members} profileImages={profileImages} adminImage={profileImage} />
         <section className="panel">
           <div className="panel-heading"><div><h2>Quick actions</h2><p>Keep your team records up to date.</p></div></div>
           <div className="quick-actions">
@@ -262,8 +274,8 @@ function Overview({ isAdmin, currentMember, members, present, totalCollected, se
         </section>
         <section className="panel match-panel">
           <div className="panel-heading"><div><h2>Next match</h2><p>Set your next fixture manually.</p></div><span className={`pill ${match ? "pill-green" : ""}`}>{match ? "SCHEDULED" : "NOT SET"}</span></div>
-          {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time} {isAdmin && <button className="delete-button" onClick={() => setMatch(null)}><Trash2 size={13} /></button>}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div></div>}
-          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
+          {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time} {isAdmin && <button className="delete-button" onClick={() => setMatch(null)}><Trash2 size={13} /></button>}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div><div className="lineup-preview"><b>Selected lineup ({match.lineup?.length || 0})</b><div>{(match.lineup || []).map((id) => { const player = members.find((item) => item.id === id); return player && <span className="lineup-chip" key={id}><Avatar member={player} image={profileImages[player.id]} />{player.name}</span>; })}</div></div></div>}
+          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><label className="lineup-select">Lineup ({matchForm.lineup.length}/14)<select multiple value={matchForm.lineup} onChange={(event) => { const lineup = [...event.target.selectedOptions].map((option) => option.value); if (lineup.length <= 14) setMatchForm({ ...matchForm, lineup }); }} >{members.map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}</select></label><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
         </section>
       </div>
       {isAdmin && <section className="panel announcement-panel">
@@ -279,7 +291,7 @@ function Overview({ isAdmin, currentMember, members, present, totalCollected, se
           <label>Position / detail<input value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })} placeholder="e.g. Midfielder" /></label>
           <button className="primary-button" type="submit"><Plus size={17} /> Add member</button>
         </form>
-        {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><div className="avatar avatar-green">{member.initials}</div><div><b>{member.name}</b><span>{member.position || "Squad member"}</span><small>{member.playerId} · {member.passcode}</small></div><button className="delete-button" onClick={() => deleteMember(member.id)}><Trash2 size={14} /></button></div>)}</div>}
+        {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><Avatar member={member} image={profileImages[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span><small>{member.playerId} · {member.passcode}</small></div><button className="delete-button" onClick={() => deleteMember(member.id)}><Trash2 size={14} /></button></div>)}</div>}
       </section>}
     </>
   );
@@ -289,7 +301,15 @@ function StatCard({ icon: Icon, label, value, detail, accent }) {
   return <div className={`stat-card accent-${accent}`}><div className="stat-top"><div className="stat-icon"><Icon size={19} /></div><span className="stat-menu">•••</span></div><span className="stat-label">{label}</span><strong>{value}</strong><small>{detail}</small></div>;
 }
 
-function Attendance({ isAdmin, currentMember, members, attendance, selectedDate, setSelectedDate, toggleAttendance, onExport }) {
+function Avatar({ member, image, className = "" }) {
+  return <div className={`avatar ${image ? "avatar-image" : "avatar-green"} ${className}`}>{image ? <img src={image} alt="" /> : member?.initials || member?.name?.slice(0, 2).toUpperCase() || "P"}</div>;
+}
+
+function OnlineMembers({ members, profileImages, adminImage }) {
+  return <section className="panel online-panel"><div className="panel-heading"><div><h2><Wifi size={16} /> Online members</h2><p>Active in the team workspace</p></div><span className="pill pill-green">{members.length + 1} online</span></div><div className="online-list"><div className="online-member"><div className="online-status" /><Avatar member={{ initials: "MJ" }} image={adminImage} /><div><b>{ADMIN_NAME}</b><span>Team admin</span></div></div>{members.map((member) => <div className="online-member" key={member.id}><div className="online-status" /><Avatar member={member} image={profileImages[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span></div></div>)}</div></section>;
+}
+
+function Attendance({ isAdmin, currentMember, members, profileImages, attendance, selectedDate, setSelectedDate, toggleAttendance, onExport }) {
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const marked = members.filter((player) => attendance[selectedDate]?.[player.id]).length;
   return (
@@ -304,29 +324,44 @@ function Attendance({ isAdmin, currentMember, members, attendance, selectedDate,
         </section>
       </div>
       {!isAdmin && currentMember && <section className="panel self-attendance"><div className="panel-heading"><div><h2>Your attendance</h2><p>{formatDate(today())} · {currentMember.name}</p></div><span className="pill">TODAY</span></div><div className="self-buttons"><button className={attendance[selectedDate]?.[currentMember.id] === "present" ? "status-present" : ""} onClick={() => toggleAttendance(currentMember.id, "present")}><Check size={18} /> Present</button><button className={attendance[selectedDate]?.[currentMember.id] === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(currentMember.id, "absent")}><X size={18} /> Absent</button></div></section>}
-      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Muqalam Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><div className={`avatar ${status === "present" ? "avatar-green" : "avatar-dark"}`}>{player.initials}</div><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
+      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Muqalam Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><Avatar member={player} image={profileImages[player.id]} /><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
     </>
   );
 }
 
-function Funds({ isAdmin, currentMember, members, funds, setFunds, totalCollected, requirement, setRequirement, requests, setRequests, approveRequest, onDeleteFund, onExport }) {
+function Chat({ isAdmin, profileImage, currentMember, members, profileImages, messages, setMessages }) {
+  const [text, setText] = useState("");
+  const sendMessage = (event) => {
+    event.preventDefault();
+    if (!text.trim()) return;
+    setMessages((current) => [...current, { id: crypto.randomUUID(), text: text.trim(), author: isAdmin ? ADMIN_NAME : currentMember.name, playerId: currentMember?.id, role: isAdmin ? "admin" : "player", status: isAdmin ? "approved" : "pending", createdAt: new Date().toISOString() }]);
+    setText("");
+  };
+  const approve = (id) => setMessages((current) => current.map((message) => message.id === id ? { ...message, status: "approved" } : message));
+  const remove = (id) => setMessages((current) => current.filter((message) => message.id !== id));
+  const visible = messages.filter((message) => message.status === "approved" || (isAdmin && message.role === "admin"));
+  return <><PageHeading eyebrow="TEAM CHAT" title="Chat" description={isAdmin ? "Messages from players wait for your approval before appearing to the team." : "Share updates with the team. Admin approval keeps chat moderated."} /><section className="panel chat-panel"><div className="chat-list">{visible.length === 0 && <div className="empty-state"><MessageCircle size={22} /><b>No messages yet</b><span>Start the team conversation.</span></div>}{visible.map((message) => { const member = members.find((item) => item.id === message.playerId); return <div className={`chat-message ${message.role === "admin" ? "chat-admin" : ""}`} key={message.id}><Avatar member={member || { name: message.author, initials: "MJ" }} image={message.role === "admin" ? profileImage : profileImages[message.playerId]} /><div className="chat-bubble"><b>{message.author}{message.role === "admin" && " · Admin"}</b><span>{message.text}</span><small>{new Date(message.createdAt).toLocaleString()}</small></div>{isAdmin && <button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button>}</div>; })}</div><form className="chat-form" onSubmit={sendMessage}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a message..." /><button className="primary-button" type="submit"><Send size={16} /> Send</button></form></section>{isAdmin && messages.some((message) => message.role === "player" && message.status === "pending") && <section className="panel moderation-panel"><div className="panel-heading"><div><h2>Approval queue</h2><p>Review player messages before publishing.</p></div><span className="pill pill-yellow">{messages.filter((message) => message.status === "pending").length} pending</span></div>{messages.filter((message) => message.role === "player" && message.status === "pending").map((message) => <div className="moderation-row" key={message.id}><span><b>{message.author}</b>{message.text}</span><button className="primary-button" onClick={() => approve(message.id)}><CheckCircle size={15} /> Approve</button><button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button></div>)}</section>}</>;
+}
+
+function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds, totalCollected, requirement, setRequirement, requests, setRequests, approveRequest, onDeleteFund, onExport }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ player: "", amount: "", date: today(), status: "Paid", note: "" });
-  const [requestForm, setRequestForm] = useState({ amount: "", reference: "" });
+  const [requestForm, setRequestForm] = useState({ amount: "", reference: "", evidence: "" });
   const [requirementInput, setRequirementInput] = useState(requirement || "");
   const filtered = useMemo(() => [...funds].filter((fund) => `${fund.player} ${fund.note} ${fund.status}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => sort === "amount" ? b.amount - a.amount : sort === "player" ? a.player.localeCompare(b.player) : new Date(b.date) - new Date(a.date)), [funds, search, sort]);
   const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; setFunds((current) => [{ ...form, id: Date.now(), amount: Number(form.amount) }, ...current]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); };
-  const submitRequest = (event) => { event.preventDefault(); if (!requestForm.amount || !currentMember) return; setRequests((current) => [{ ...requestForm, id: crypto.randomUUID(), player: currentMember.name, playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }, ...current]); setRequestForm({ amount: "", reference: "" }); };
+  const submitRequest = (event) => { event.preventDefault(); if (!requestForm.amount || !currentMember) return; setRequests((current) => [{ ...requestForm, id: crypto.randomUUID(), player: currentMember.name, playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }, ...current]); setRequestForm({ amount: "", reference: "", evidence: "" }); };
+  const readEvidence = (event) => { const file = event.target.files?.[0]; if (!file || !file.type.startsWith("image/")) return; const reader = new FileReader(); reader.onload = () => setRequestForm((current) => ({ ...current, evidence: reader.result })); reader.readAsDataURL(file); };
   return (
     <>
       <PageHeading eyebrow="FUND COLLECTION" title="Fund" description="A transparent, simple way to manage the team fund." action={<div className="heading-actions">{isAdmin && <><button className="secondary-button" onClick={onExport}><Download size={17} /> Export report</button><button className="primary-button" onClick={() => setShowForm(!showForm)}><Plus size={17} /> Add contribution</button></>}</div>} />
       <div className="fund-hero"><div className="fund-hero-copy"><div className="fund-icon"><CircleDollarSign size={25} /></div><div><span>Total collected</span><strong>{money(totalCollected)}</strong><small><TrendingUp size={13} /> Official verified contributions</small></div></div></div>
-      {isAdmin ? <section className="panel fund-settings"><div className="panel-heading"><div><h2>Fund requirement</h2><p>Set the team-wide dues amount and payment instruction.</p></div><span className="pill">EasyPaisa</span></div><form className="requirement-form" onSubmit={(event) => { event.preventDefault(); setRequirement(Number(requirementInput) || 0); }}><label>Team requirement (PKR)<input type="number" min="0" value={requirementInput} onChange={(event) => setRequirementInput(event.target.value)} placeholder="e.g. 20000" /></label><div className="payment-instructions"><b>Send payments via EasyPaisa</b><strong>03169057203</strong></div><button className="primary-button" type="submit"><Check size={16} /> Save requirement</button></form></section> : <section className="panel fund-settings"><div className="payment-instructions"><b>Send your payment via EasyPaisa</b><strong>03169057203</strong><span>Team requirement: {money(requirement || 0)}</span></div><form className="request-form" onSubmit={submitRequest}><input required type="number" min="1" placeholder="Amount paid (PKR)" value={requestForm.amount} onChange={(event) => setRequestForm({ ...requestForm, amount: event.target.value })} /><input placeholder="EasyPaisa reference (optional)" value={requestForm.reference} onChange={(event) => setRequestForm({ ...requestForm, reference: event.target.value })} /><button className="primary-button" type="submit"><Check size={16} /> Submit payment request</button></form></section>}
-      {isAdmin && requests.length > 0 && <section className="panel request-panel"><div className="panel-heading"><div><h2>Payment requests</h2><p>Verify EasyPaisa payments before adding them to the ledger.</p></div><span className="pill">{requests.length} pending</span></div>{requests.map((request) => <div className="request-row" key={request.id}><div><b>{request.player}</b><span>{money(request.amount)} · {formatDate(request.date)} · Ref: {request.reference || "—"}</span></div><button className="primary-button" onClick={() => approveRequest(request)}><Check size={15} /> Approve / Verify</button></div>)}</section>}
+      {isAdmin ? <section className="panel fund-settings"><div className="panel-heading"><div><h2>Fund requirement</h2><p>Set the team-wide dues amount and payment instruction.</p></div><span className="pill">EasyPaisa</span></div><form className="requirement-form" onSubmit={(event) => { event.preventDefault(); setRequirement(Number(requirementInput) || 0); }}><label>Team requirement (PKR)<input type="number" min="0" value={requirementInput} onChange={(event) => setRequirementInput(event.target.value)} placeholder="e.g. 20000" /></label><div className="payment-instructions"><b>Send payments via EasyPaisa</b><strong>03169057203</strong></div><button className="primary-button" type="submit"><Check size={16} /> Save requirement</button></form></section> : <section className="panel fund-settings"><div className="payment-instructions"><b>Send your payment via EasyPaisa</b><strong>03169057203</strong><span>Team requirement: {money(requirement || 0)}</span></div><form className="request-form" onSubmit={submitRequest}><input required type="number" min="1" placeholder="Amount paid (PKR)" value={requestForm.amount} onChange={(event) => setRequestForm({ ...requestForm, amount: event.target.value })} /><input required placeholder="EasyPaisa reference" value={requestForm.reference} onChange={(event) => setRequestForm({ ...requestForm, reference: event.target.value })} /><label className="upload-field">Screenshot evidence<input required type="file" accept="image/*" onChange={readEvidence} /></label><button className="primary-button" type="submit"><Check size={16} /> Submit payment request</button></form></section>}
+      {isAdmin && requests.length > 0 && <section className="panel request-panel"><div className="panel-heading"><div><h2>Payment requests</h2><p>Verify EasyPaisa payments and evidence before adding them to the ledger.</p></div><span className="pill">{requests.length} pending</span></div>{requests.map((request) => <div className="request-row" key={request.id}><div><b>{request.player}</b><span>{money(request.amount)} · {formatDate(request.date)} · Ref: {request.reference || "—"}</span>{request.evidence && <img className="payment-evidence" src={request.evidence} alt="Payment evidence" />}</div><button className="primary-button" onClick={() => approveRequest(request)}><Check size={15} /> Approve / Verify</button></div>)}</section>}
       {showForm && <section className="panel form-panel"><div className="panel-heading"><div><h2>New contribution</h2><p>Record a payment in the team ledger.</p></div><button className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button></div><form className="fund-form" onSubmit={submit}><label>Player name<select required value={form.player} onChange={(e) => setForm({ ...form, player: e.target.value })}><option value="">Select player</option>{members.map((player) => <option value={player.name} key={player.id}>{player.name}</option>)}</select></label><label>Amount (PKR)<input required type="number" min="1" placeholder="e.g. 1500" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label>Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label><label>Payment status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Paid</option><option>Pending</option></select></label><label className="wide-field">Note (optional)<input placeholder="Add a note..." value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label><button className="primary-button submit-fund" type="submit" disabled={!members.length}><Check size={17} /> Save contribution</button></form>{!members.length && <div className="form-hint">Add a squad member before recording a contribution.</div>}</section>}
-      {isAdmin && <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead><tbody>{filtered.map((fund) => <tr key={fund.id}><td><div className="table-player"><div className="avatar avatar-dark">{fund.player.split(" ").map((word) => word[0]).join("").slice(0, 2)}</div><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td><td><button className="delete-button" onClick={() => onDeleteFund(fund.id)}><Trash2 size={14} /></button></td></tr>)}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>}
+      {isAdmin && <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead><tbody>{filtered.map((fund) => { const fundMember = members.find((member) => member.name === fund.player); return <tr key={fund.id}><td><div className="table-player"><Avatar member={fundMember || { name: fund.player, initials: fund.player.split(" ").map((word) => word[0]).join("").slice(0, 2) }} image={fundMember && profileImages?.[fundMember.id]} /><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td><td><button className="delete-button" onClick={() => onDeleteFund(fund.id)}><Trash2 size={14} /></button></td></tr>; })}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>}
     </>
   );
 }
