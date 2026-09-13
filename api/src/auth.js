@@ -18,10 +18,11 @@ function tokenFor(subject, role, playerId) {
   return jwt.sign({ sub: subject, role, ...(playerId ? { player_id: playerId } : {}) }, secret, { expiresIn: "7d" });
 }
 async function authenticate(request) {
-  const header = request.headers.get("authorization") || "";
-  if (!header.toLowerCase().startsWith("bearer ")) return null;
+  const header = request.headers.get("authorization")?.trim() || "";
+  const match = /^Bearer\s+(\S+)$/i.exec(header);
+  if (!match) return null;
   try {
-    const payload = jwt.verify(header.slice(7), configuredValue("JWT_SECRET_KEY", DEFAULT_JWT_SECRET));
+    const payload = jwt.verify(match[1], configuredValue("JWT_SECRET_KEY", DEFAULT_JWT_SECRET));
     if (!payload.sub || !["admin", "player"].includes(payload.role)) return null;
     if (payload.role === "player") {
       const result = await query("SELECT player_id FROM players WHERE player_id = $1 AND active = TRUE", [payload.player_id]);

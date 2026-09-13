@@ -5,7 +5,7 @@ const TOKEN_STORAGE_KEY = "token";
 
 function storedToken() {
   try {
-    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY)?.trim();
     if (token) return token;
     const auth = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null");
     return auth?.access_token || auth?.accessToken || "";
