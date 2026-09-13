@@ -73,12 +73,14 @@ settings in `VITE_*` variables, because Vite exposes them to browsers.
 
 ## Azure SQL schema
 
-Create the target database and run `api/schema.sql` once with an approved
-migration tool or SQL client (for example, the Azure portal query editor).
-It creates `players` and `attendance`, including the foreign key and unique
-player/date constraint. Seed players with bcrypt passcode hashes; the API does
-not create tables or seed data automatically. Grant the configured SQL
-principal only the database permissions required by these queries.
+The API automatically creates the `players` and `attendance` tables on the
+first database query when they are missing. The operation is idempotent and
+uses a shared initialization promise per function instance. You can still run
+`api/schema.sql` manually with an approved migration tool or SQL client for a
+reviewed production migration, but it is no longer required for a new
+database. Seed players with bcrypt passcode hashes; grant the configured SQL
+principal permission to create these tables and perform the application
+queries.
 
 All non-login API routes require a JWT. Queries are parameterized, and player
 tokens are checked against active database records. Admin tokens last seven

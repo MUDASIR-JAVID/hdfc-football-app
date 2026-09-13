@@ -13,13 +13,14 @@ function storedToken() {
 
 async function request(path, options = {}, token, attachStoredToken = true) {
   if (!API_ENABLED) throw new Error("Backend is not configured; using local storage fallback.");
-  const accessToken = token || (attachStoredToken ? storedToken() : "");
+  const rawToken = token || (attachStoredToken ? storedToken() : "");
+  const accessToken = String(rawToken).replace(/^Bearer\s+/i, "").trim();
   const requestOptions = {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...options.headers,
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
   };
   let response = await fetch(`${API_BASE_URL}${path}`, requestOptions);
