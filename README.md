@@ -49,8 +49,9 @@ server-side settings (not Vite variables):
 - `ADMIN_PASSCODE`: optional plain-text fallback for simpler setup. If neither
   setting is supplied, development uses `SDFC-ADMIN`; set one explicitly in
   production.
-- `JWT_SECRET_KEY` must be at least 32 characters or admin login returns a
-  configuration error.
+- `JWT_SECRET_KEY` should be at least 32 characters. If it is missing, the
+  API uses a development fallback so local/admin login can still work; replace
+  it in production because the fallback is not a secret.
 
 Admin login validates these settings before attempting any SQL query. Make sure
 the Azure application setting names contain no trailing spaces:

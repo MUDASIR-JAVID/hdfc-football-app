@@ -1,6 +1,12 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const { query } = require("./sql");
+const DEFAULT_JWT_SECRET = "SDFC-development-only-jwt-secret-change-this-in-production-2026";
+
+function configuredValue(name, fallback) {
+  const value = process.env[name];
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
 
 function corsHeaders() {
   const origins = process.env.CORS_ORIGINS || "*";
@@ -8,15 +14,14 @@ function corsHeaders() {
 }
 function json(status, body) { return { status, headers: { "Content-Type": "application/json", ...corsHeaders() }, jsonBody: body }; }
 function tokenFor(subject, role, playerId) {
-  const secret = process.env.JWT_SECRET_KEY;
-  if (!secret || secret.length < 32) throw new Error("JWT_SECRET_KEY must be at least 32 characters");
+  const secret = configuredValue("JWT_SECRET_KEY", DEFAULT_JWT_SECRET);
   return jwt.sign({ sub: subject, role, ...(playerId ? { player_id: playerId } : {}) }, secret, { expiresIn: "1h" });
 }
 async function authenticate(request) {
   const header = request.headers.get("authorization") || "";
   if (!header.toLowerCase().startsWith("bearer ")) return null;
   try {
-    const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET_KEY);
+    const payload = jwt.verify(header.slice(7), configuredValue("JWT_SECRET_KEY", DEFAULT_JWT_SECRET));
     if (!payload.sub || !["admin", "player"].includes(payload.role)) return null;
     if (payload.role === "player") {
       const result = await query("SELECT player_id FROM players WHERE player_id = @playerId AND active = 1", { playerId: payload.player_id });
@@ -29,9 +34,9 @@ async function login(request) {
   const body = await request.json().catch(() => ({}));
   const username = String(body.username || "").trim();
   const passcode = String(body.passcode || "");
-  const adminUsername = String(process.env.ADMIN_USERNAME || "admin").trim();
+  const adminUsername = configuredValue("ADMIN_USERNAME", "admin");
   const hash = String(process.env.ADMIN_PASSCODE_HASH || "").trim();
-  const plainPasscode = String(process.env.ADMIN_PASSCODE || "SDFC-ADMIN").trim();
+  const plainPasscode = configuredValue("ADMIN_PASSCODE", "SDFC-ADMIN");
   let adminValid = false;
   if (username === adminUsername) {
     try {
