@@ -373,7 +373,7 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
         <StatCard icon={Users} label="Active players" value={members.length} detail="Add your squad members below" accent="purple" />
         <StatCard icon={TrendingUp} label="Team attendance" value={members.length ? `${Math.round((present / members.length) * 100)}%` : "0%"} detail="Today's attendance" accent="orange" />
       </div>
-      <div className="content-grid overview-grid">
+      <div className="overview-grid">
         <OnlineMembers members={members} profileImages={profileImages} adminImage={profileImage} />
         <section className="panel">
           <div className="panel-heading"><div><h2>Quick actions</h2><p>Keep your team records up to date.</p></div></div>
