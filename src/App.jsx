@@ -112,7 +112,11 @@ function App() {
 
   const handleLogin = (nextAuth) => {
     // Persist before switching the tree to the authenticated application.
-    try { localStorage.setItem("sdfc-auth-v3", JSON.stringify(nextAuth)); } catch { /* best effort */ }
+    try {
+      localStorage.setItem("sdfc-auth-v3", JSON.stringify(nextAuth));
+      const token = nextAuth?.access_token || nextAuth?.accessToken;
+      if (token) localStorage.setItem("token", token);
+    } catch { /* best effort */ }
     setAuth(nextAuth);
   };
 
@@ -196,7 +200,13 @@ function App() {
   const isAdmin = auth.role === "admin";
   const currentPlayerId = auth.playerId || auth.player_id;
   const currentMember = members.find((member) => member.playerId === currentPlayerId);
-  const logout = () => setAuth(null);
+  const logout = () => {
+    try {
+      localStorage.removeItem("sdfc-auth-v3");
+      localStorage.removeItem("token");
+    } catch { /* best effort */ }
+    setAuth(null);
+  };
 
   return (
     <div className="app-shell" style={wallpaper ? { backgroundImage: `linear-gradient(#090b11cc,#090b11ee), url(${wallpaper})` } : undefined}>

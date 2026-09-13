@@ -1,9 +1,12 @@
 export const API_ENABLED = import.meta.env.PROD || Boolean(import.meta.env.VITE_API_BASE_URL);
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 const AUTH_STORAGE_KEY = "sdfc-auth-v3";
+const TOKEN_STORAGE_KEY = "token";
 
 function storedToken() {
   try {
+    const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (token) return token;
     const auth = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null");
     return auth?.access_token || auth?.accessToken || "";
   } catch {
