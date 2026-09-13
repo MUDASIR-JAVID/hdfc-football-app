@@ -31,15 +31,28 @@ async function login(request) {
   const passcode = String(body.passcode || "");
   const hash = process.env.ADMIN_PASSCODE_HASH;
   const plainPasscode = process.env.ADMIN_PASSCODE || "SDFC-ADMIN";
-  const adminValid = hash
-    ? await bcrypt.compare(passcode, hash)
-    : passcode === plainPasscode;
+  let adminValid = false;
+  try {
+    adminValid = hash
+      ? await bcrypt.compare(passcode, hash)
+      : passcode === plainPasscode;
+  } catch {
+    adminValid = false;
+  }
   if (username === (process.env.ADMIN_USERNAME || "admin") && adminValid) {
     return json(200, { access_token: tokenFor(username, "admin"), token_type: "bearer", role: "admin" });
   }
   const result = await query("SELECT player_id, passcode_hash FROM players WHERE player_id = @playerId AND active = 1", { playerId: username });
   const player = result.recordset[0];
-  if (!player || !(await bcrypt.compare(passcode, player.passcode_hash))) return json(401, { detail: "Invalid credentials" });
+  let playerValid = false;
+  if (player) {
+    try {
+      playerValid = await bcrypt.compare(passcode, player.passcode_hash);
+    } catch {
+      playerValid = false;
+    }
+  }
+  if (!playerValid) return json(401, { detail: "Invalid credentials" });
   return json(200, { access_token: tokenFor(player.player_id, "player", player.player_id), token_type: "bearer", role: "player", player_id: player.player_id });
 }
 module.exports = { authenticate, corsHeaders, json, login };

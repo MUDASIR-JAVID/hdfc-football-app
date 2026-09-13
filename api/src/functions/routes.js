@@ -14,7 +14,21 @@ const options = () => ({ status: 204, headers: corsHeaders() });
 app.http("health", { methods: ["GET", "OPTIONS"], authLevel: "anonymous", route: "health",
   handler: async (request) => request.method === "OPTIONS" ? options() : json(200, { status: "ok" }) });
 app.http("login", { methods: ["POST", "OPTIONS"], authLevel: "anonymous", route: "auth/login",
-  handler: async (request) => request.method === "OPTIONS" ? options() : login(request) });
+  handler: async (request) => {
+    if (request.method === "OPTIONS") return options();
+    try {
+      return await login(request);
+    } catch (error) {
+      console.error("Login failed", error);
+      const message = error?.message || "";
+      const configurationError = /JWT_SECRET_KEY|AZURE_SQL_CONNECTION_STRING|ADMIN_PASSCODE/i.test(message);
+      return json(configurationError ? 503 : 500, {
+        detail: configurationError
+          ? "Authentication service is not configured correctly."
+          : "Authentication service is temporarily unavailable.",
+      });
+    }
+  } });
 
 app.http("players", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous", route: "players",
   handler: async (request) => {

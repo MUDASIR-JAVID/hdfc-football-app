@@ -49,6 +49,8 @@ server-side settings (not Vite variables):
 - `ADMIN_PASSCODE`: optional plain-text fallback for simpler setup. If neither
   setting is supplied, development uses `SDFC-ADMIN`; set one explicitly in
   production.
+- `JWT_SECRET_KEY` must be at least 32 characters or admin login returns a
+  configuration error.
 - `CORS_ORIGINS`: optional comma-separated origins for direct/local callers;
   same-origin Static Web Apps requests do not require permissive CORS.
 
