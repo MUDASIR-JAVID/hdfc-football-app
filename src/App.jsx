@@ -124,6 +124,7 @@ function App() {
   // Versioned keys intentionally start empty so the former demo records cannot leak into the real squad.
   const [members, setMembers] = useState([]);
   const [attendance, setAttendance] = useState({});
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
   const [funds, setFunds] = useState([]);
   const [match, setMatch] = useStoredState("sdfc-match-v2", null);
   const [announcements, setAnnouncements] = useState([]);
@@ -136,6 +137,34 @@ function App() {
   const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
   const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
+  const notificationUserKey = auth ? `${auth.role || "user"}-${auth.playerId || auth.player_id || auth.name || "account"}` : "anonymous";
+  const [readMarkerStore, setReadMarkerStore] = useStoredState("sdfc-notification-read-v1", {});
+  const readMarkers = readMarkerStore && typeof readMarkerStore === "object" ? readMarkerStore[notificationUserKey] : null;
+  const safeReadMarkers = readMarkers && typeof readMarkers === "object" ? readMarkers : {};
+  const safePaymentRequests = Array.isArray(paymentRequests) ? paymentRequests.filter(Boolean) : [];
+  const safeAttendanceRecords = Array.isArray(attendanceRecords) ? attendanceRecords.filter(Boolean) : [];
+  const safeChatMessages = Array.isArray(chatMessages) ? chatMessages.filter(Boolean) : [];
+  const itemKey = (item, type) => {
+    if (!item || typeof item !== "object") return "";
+    if (item.id) return `${type}:${item.id}`;
+    if (type === "attendance") return `${type}:${item.playerId || ""}:${item.date || ""}:${item.status || ""}`;
+    return `${type}:${item.createdAt || item.date || item.text || JSON.stringify(item)}`;
+  };
+  const unreadCount = (items, type) => {
+    const read = Array.isArray(safeReadMarkers[type]) ? safeReadMarkers[type] : [];
+    return items.reduce((count, item) => count + (itemKey(item, type) && !read.includes(itemKey(item, type)) ? 1 : 0), 0);
+  };
+  const markSectionRead = (section) => {
+    const items = section === "funds" ? safePaymentRequests : section === "attendance" ? safeAttendanceRecords : safeChatMessages;
+    const keys = items.map((item) => itemKey(item, section)).filter(Boolean);
+    setReadMarkerStore((currentStore) => {
+      const store = currentStore && typeof currentStore === "object" ? currentStore : {};
+      const existing = store[notificationUserKey] && typeof store[notificationUserKey] === "object" ? store[notificationUserKey] : {};
+      const next = [...new Set([...(Array.isArray(existing[section]) ? existing[section] : []), ...keys])].slice(-500);
+      if (JSON.stringify(existing[section] || []) === JSON.stringify(next)) return currentStore;
+      return { ...store, [notificationUserKey]: { ...existing, [section]: next } };
+    });
+  };
   const saveFundSettings = (requirement) => { const number = Number(requirement) || 0; setFundRequirement(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement: number, easyPaisaNumber }) }).catch((error) => console.error("Unable to save fund settings:", error)); };
   const saveEasyPaisa = (number) => { setEasyPaisaNumber(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement, easyPaisaNumber: number }) }).catch((error) => console.error("Unable to save EasyPaisa settings:", error)); };
   useEffect(() => {
@@ -147,11 +176,17 @@ function App() {
       setAnnouncements(Array.isArray(notices) ? notices.filter(Boolean) : []);
       setFunds(Array.isArray(ledger) ? ledger.filter(Boolean) : []);
       setPaymentRequests(Array.isArray(requests) ? requests.filter(Boolean) : []);
+      setAttendanceRecords(safeRecords);
       setFundRequirement(Number(settings && typeof settings === "object" ? settings.fundRequirement || 0 : 0));
       setEasyPaisaNumber(settings && typeof settings === "object" && settings.easyPaisaNumber ? String(settings.easyPaisaNumber) : "03169057203");
       setAttendance(safeRecords.reduce((all, item) => ({ ...all, [item.date]: { ...(all[item.date] || {}), [item.playerId]: item.status } }), {}));
     }).catch((error) => { if (/token|401|expired/i.test(error.message)) { getBrowserStorage()?.removeItem("sdfc-auth-token"); getBrowserStorage()?.removeItem("sdfc-auth-user"); setAuth(null); } });
   }, [auth]);
+  useEffect(() => {
+    if (active === "funds" && auth?.role === "admin") markSectionRead("funds");
+    if (active === "attendance" && auth?.role === "admin") markSectionRead("attendance");
+    if (active === "chat") markSectionRead("chat");
+  }, [active, auth, paymentRequests, attendanceRecords, chatMessages]);
   const handleLogin = (nextAuth) => { setAuth(nextAuth.user); getBrowserStorage()?.setItem("sdfc-auth-token", nextAuth.token); getBrowserStorage()?.setItem("sdfc-auth-user", JSON.stringify(nextAuth.user)); };
 
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
@@ -204,18 +239,23 @@ function App() {
     URL.revokeObjectURL(link.href);
   };
 
+  const isAdmin = auth?.role === "admin";
   const navItems = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
     { id: "attendance", label: "Present", icon: ClipboardCheck },
     { id: "funds", label: "Fund", icon: WalletCards },
     { id: "chat", label: "Chat", icon: MessageCircle },
   ];
+  const notificationCounts = {
+    funds: isAdmin ? unreadCount(safePaymentRequests, "funds") : 0,
+    attendance: isAdmin ? unreadCount(safeAttendanceRecords, "attendance") : 0,
+    chat: unreadCount(safeChatMessages, "chat"),
+  };
 
   if (!auth) {
     return     <LoginScreen onLogin={handleLogin} />;
   }
 
-  const isAdmin = auth.role === "admin";
   const currentPlayerId = auth.playerId || auth.player_id;
   const currentMember = members.find((member) => member.playerId === currentPlayerId);
   const logout = () => {
@@ -242,8 +282,8 @@ function App() {
         <nav className="nav-list">
           <small>MAIN MENU</small>
           {navItems.map(({ id, label, icon: Icon }) => (
-            <button key={id} className={`nav-link ${active === id ? "active" : ""}`} onClick={() => { setActive(id); setMobileMenu(false); }}>
-              <Icon size={18} /><span>{label}</span>
+            <button key={id} className={`nav-link ${active === id ? "active" : ""}`} onClick={() => { setActive(id); setMobileMenu(false); if (id === "funds" || id === "attendance" || id === "chat") markSectionRead(id); }}>
+              <Icon size={18} /><span>{label}</span>{notificationCounts[id] > 0 && <span className="notification-badge" aria-label={`${notificationCounts[id]} unread`}>{notificationCounts[id] > 99 ? "99+" : notificationCounts[id]}</span>}
             </button>
           ))}
         </nav>
