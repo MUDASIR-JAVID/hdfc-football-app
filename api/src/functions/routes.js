@@ -20,13 +20,8 @@ app.http("login", { methods: ["POST", "OPTIONS"], authLevel: "anonymous", route:
       return await login(request);
     } catch (error) {
       console.error("Login failed", error);
-      const message = error?.message || "";
-      const configurationError = /JWT_SECRET_KEY|AZURE_SQL_CONNECTION_STRING|ADMIN_PASSCODE/i.test(message);
-      return json(configurationError ? 503 : 500, {
-        detail: configurationError
-          ? "Authentication service is not configured correctly."
-          : "Authentication service is temporarily unavailable.",
-      });
+      const configurationError = /JWT_SECRET_KEY|DATABASE_URL|ADMIN_PASSCODE/i.test(error?.message || "");
+      return json(configurationError ? 503 : 500, { detail: configurationError ? "Authentication service is not configured correctly." : "Authentication service is temporarily unavailable." });
     }
   } });
 
@@ -36,8 +31,8 @@ app.http("players", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous
     const checked = await access(request, request.method === "POST");
     if (checked.response) return checked.response;
     if (request.method === "GET") {
-      const result = await query("SELECT player_id, name, position, profile_image_url, active FROM players WHERE active = 1 ORDER BY name");
-      return json(200, result.recordset);
+      const result = await query("SELECT player_id, name, position, profile_image_url, active FROM players WHERE active = TRUE ORDER BY name");
+      return json(200, result.rows);
     }
     const body = await request.json().catch(() => ({}));
     const playerId = String(body.player_id || "").trim();
@@ -46,12 +41,12 @@ app.http("players", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous
     if (!/^[A-Za-z0-9_-]+$/.test(playerId) || !name || passcode.length < 8) return json(400, { detail: "player_id, name and an 8-character passcode are required" });
     try {
       const result = await query(
-        "INSERT INTO players (player_id, passcode_hash, name, position, profile_image_url, active) OUTPUT INSERTED.player_id, INSERTED.name, INSERTED.position, INSERTED.profile_image_url, INSERTED.active VALUES (@playerId, @hash, @name, @position, @image, 1)",
-        { playerId, hash: await bcrypt.hash(passcode, 12), name, position: body.position ? String(body.position) : null, image: body.profile_image_url ? String(body.profile_image_url) : null }
+        "INSERT INTO players (player_id, passcode_hash, name, position, profile_image_url) VALUES ($1, $2, $3, $4, $5) RETURNING player_id, name, position, profile_image_url, active",
+        [playerId, await bcrypt.hash(passcode, 12), name, body.position ? String(body.position) : null, body.profile_image_url ? String(body.profile_image_url) : null],
       );
-      return json(201, result.recordset[0]);
+      return json(201, result.rows[0]);
     } catch (error) {
-      if (error.number === 2627 || error.number === 2601) return json(409, { detail: "Player ID already exists" });
+      if (error.code === "23505") return json(409, { detail: "Player ID already exists" });
       throw error;
     }
   } });
@@ -61,8 +56,8 @@ app.http("deletePlayer", { methods: ["DELETE", "OPTIONS"], authLevel: "anonymous
     if (request.method === "OPTIONS") return options();
     const checked = await access(request, true);
     if (checked.response) return checked.response;
-    const result = await query("UPDATE players SET active = 0 WHERE player_id = @playerId", { playerId: request.params.playerId });
-    return result.rowsAffected[0] ? { status: 204, headers: corsHeaders() } : json(404, { detail: "Player not found" });
+    const result = await query("UPDATE players SET active = FALSE WHERE player_id = $1", [request.params.playerId]);
+    return result.rowCount ? { status: 204, headers: corsHeaders() } : json(404, { detail: "Player not found" });
   } });
 
 app.http("attendance", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous", route: "attendance",
@@ -73,16 +68,12 @@ app.http("attendance", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonym
     if (request.method === "GET") {
       const requested = request.query.get("player_id") || (checked.user.role === "player" ? checked.user.player_id : null);
       if (checked.user.role === "player" && requested !== checked.user.player_id) return json(403, { detail: "Players may only view their own attendance" });
+      const params = requested ? [requested] : [];
       const result = await query(
-        `SELECT a.date, a.status, p.player_id FROM attendance a JOIN players p ON p.id = a.player_id WHERE p.active = 1${requested ? " AND p.player_id = @playerId" : ""} ORDER BY a.date DESC`,
-        requested ? { playerId: requested } : {}
+        `SELECT a.date::text AS date, a.status, p.player_id FROM attendance a JOIN players p ON p.id = a.player_id WHERE p.active = TRUE${requested ? " AND p.player_id = $1" : ""} ORDER BY a.date DESC`,
+        params,
       );
-      return json(200, result.recordset.map((row) => ({
-        ...row,
-        // mssql normally returns DATE as Date, but drivers/configuration can
-        // return an ISO string instead.
-        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10),
-      })));
+      return json(200, result.rows);
     }
     const body = await request.json().catch(() => ({}));
     const playerId = String(body.player_id || "");
@@ -90,8 +81,11 @@ app.http("attendance", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonym
     const status = String(body.status || "");
     if (checked.user.role !== "admin" && checked.user.player_id !== playerId) return json(403, { detail: "Players may only update their own attendance" });
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !["present", "absent", "late", "excused"].includes(status)) return json(400, { detail: "Invalid attendance date or status" });
-    const player = await query("SELECT id FROM players WHERE player_id = @playerId AND active = 1", { playerId });
-    if (!player.recordset.length) return json(404, { detail: "Player not found" });
-    await query("MERGE attendance AS target USING (SELECT @playerDbId AS player_id, @date AS date, @status AS status) AS source ON target.player_id = source.player_id AND target.date = source.date WHEN MATCHED THEN UPDATE SET status = source.status WHEN NOT MATCHED THEN INSERT (player_id, date, status) VALUES (source.player_id, source.date, source.status);", { playerDbId: player.recordset[0].id, date: new Date(`${date}T00:00:00Z`), status });
+    const player = await query("SELECT id FROM players WHERE player_id = $1 AND active = TRUE", [playerId]);
+    if (!player.rowCount) return json(404, { detail: "Player not found" });
+    await query(
+      "INSERT INTO attendance (player_id, date, status) VALUES ($1, $2, $3) ON CONFLICT (player_id, date) DO UPDATE SET status = EXCLUDED.status",
+      [player.rows[0].id, date, status],
+    );
     return json(200, { date, status, player_id: playerId });
   } });

@@ -24,8 +24,8 @@ async function authenticate(request) {
     const payload = jwt.verify(header.slice(7), configuredValue("JWT_SECRET_KEY", DEFAULT_JWT_SECRET));
     if (!payload.sub || !["admin", "player"].includes(payload.role)) return null;
     if (payload.role === "player") {
-      const result = await query("SELECT player_id FROM players WHERE player_id = @playerId AND active = 1", { playerId: payload.player_id });
-      if (!result.recordset.length) return null;
+      const result = await query("SELECT player_id FROM players WHERE player_id = $1 AND active = TRUE", [payload.player_id]);
+      if (!result.rowCount) return null;
     }
     return payload;
   } catch { return null; }
@@ -50,8 +50,8 @@ async function login(request) {
     if (!adminValid) return json(401, { detail: "Invalid admin credentials" });
     return json(200, { access_token: tokenFor(username, "admin"), token_type: "bearer", role: "admin" });
   }
-  const result = await query("SELECT player_id, passcode_hash FROM players WHERE player_id = @playerId AND active = 1", { playerId: username });
-  const player = result.recordset[0];
+  const result = await query("SELECT player_id, passcode_hash FROM players WHERE player_id = $1 AND active = TRUE", [username]);
+  const player = result.rows[0];
   let playerValid = false;
   if (player) {
     try {

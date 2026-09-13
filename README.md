@@ -42,7 +42,8 @@ exactly once as `/api/...`.
 In the Static Web App **Configuration > Application settings**, add these
 server-side settings (not Vite variables):
 
-- `AZURE_SQL_CONNECTION_STRING`: the complete Azure SQL connection string.
+- `DATABASE_URL`: the Neon PostgreSQL connection string (include
+  `?sslmode=require`).
 - `JWT_SECRET_KEY`: a random secret of at least 32 characters.
 - `ADMIN_USERNAME`: the administrator login name.
 - `ADMIN_PASSCODE_HASH`: optional bcrypt hash (preferred).
@@ -71,16 +72,14 @@ the deployment step is skipped until the token is added.
 variable (`vars.VITE_API_BASE_URL`). Never commit credentials or put SQL/JWT
 settings in `VITE_*` variables, because Vite exposes them to browsers.
 
-## Azure SQL schema
+## Neon PostgreSQL schema
 
 The API automatically creates the `players` and `attendance` tables on the
 first database query when they are missing. The operation is idempotent and
-uses a shared initialization promise per function instance. You can still run
-`api/schema.sql` manually with an approved migration tool or SQL client for a
-reviewed production migration, but it is no longer required for a new
-database. Seed players with bcrypt passcode hashes; grant the configured SQL
-principal permission to create these tables and perform the application
-queries.
+uses a shared initialization promise per function instance, making it safe for
+serverless cold starts. You can still run `api/schema.sql` manually, but it is
+not required for a new database. Seed players with bcrypt passcode hashes and
+grant the Neon role permission to create tables and indexes.
 
 All non-login API routes require a JWT. Queries are parameterized, and player
 tokens are checked against active database records. Admin tokens last seven

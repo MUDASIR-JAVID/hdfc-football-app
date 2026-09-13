@@ -14,9 +14,11 @@ function storedToken() {
   }
 }
 
-async function request(path, options = {}, token, attachStoredToken = true) {
+async function request(path, options = {}, token) {
   if (!API_ENABLED) throw new Error("Backend is not configured; using local storage fallback.");
-  const rawToken = token || (attachStoredToken ? storedToken() : "");
+  // Authenticated calls always use the current browser token, not a stale
+  // token captured in a component closure. A null token is reserved for login.
+  const rawToken = token === null ? "" : storedToken();
   const accessToken = String(rawToken).replace(/^Bearer\s+/i, "").trim();
   const requestOptions = {
     ...options,
@@ -26,14 +28,7 @@ async function request(path, options = {}, token, attachStoredToken = true) {
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
     },
   };
-  let response = await fetch(`${API_BASE_URL}${path}`, requestOptions);
-  // A single retry avoids logging out a valid session during a transient
-  // managed-API/authentication failure. Only two consecutive 401s expire it.
-  if (response.status === 401 && accessToken) {
-    response = await fetch(`${API_BASE_URL}${path}`, requestOptions);
-  }
-  // Login failures must not log out an existing session. Also include the
-  // token that failed so a stale request cannot clear a newer login.
+  const response = await fetch(`${API_BASE_URL}${path}`, requestOptions);
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || payload.error || `Request failed (${response.status})`);
@@ -42,7 +37,7 @@ async function request(path, options = {}, token, attachStoredToken = true) {
 }
 
 export const api = {
-  login: (username, passcode) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, passcode }) }, "", false),
+  login: (username, passcode) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, passcode }) }, null),
   players: (token) => request("/api/players", {}, token),
   createPlayer: (player, token) => request("/api/players", { method: "POST", body: JSON.stringify(player) }, token),
   deletePlayer: (playerId, token) => request(`/api/players/${encodeURIComponent(playerId)}`, { method: "DELETE" }, token),
