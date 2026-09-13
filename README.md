@@ -45,7 +45,10 @@ server-side settings (not Vite variables):
 - `AZURE_SQL_CONNECTION_STRING`: the complete Azure SQL connection string.
 - `JWT_SECRET_KEY`: a random secret of at least 32 characters.
 - `ADMIN_USERNAME`: the administrator login name.
-- `ADMIN_PASSCODE_HASH`: a bcrypt hash, never the plaintext passcode.
+- `ADMIN_PASSCODE_HASH`: optional bcrypt hash (preferred).
+- `ADMIN_PASSCODE`: optional plain-text fallback for simpler setup. If neither
+  setting is supplied, development uses `SDFC-ADMIN`; set one explicitly in
+  production.
 - `CORS_ORIGINS`: optional comma-separated origins for direct/local callers;
   same-origin Static Web Apps requests do not require permissive CORS.
 

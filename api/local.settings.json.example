@@ -5,6 +5,7 @@
     "AZURE_SQL_CONNECTION_STRING": "Server=tcp:<server>.database.windows.net,1433;Initial Catalog=<database>;User ID=<user>;Password=<password>;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;",
     "JWT_SECRET_KEY": "<generate-a-random-secret-at-least-32-characters>",
     "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSCODE": "SDFC-ADMIN",
     "ADMIN_PASSCODE_HASH": "<bcrypt-hash>",
     "CORS_ORIGINS": "http://localhost:5173"
   }
