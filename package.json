@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "node server.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
@@ -12,6 +13,8 @@
     "node": ">=22.12"
   },
   "dependencies": {
+    "express": "^5.2.1",
+    "express": "^5.1.0",
     "lucide-react": "^1.45.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
