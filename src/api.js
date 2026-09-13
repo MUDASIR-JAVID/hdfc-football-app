@@ -18,7 +18,7 @@ async function request(path, options = {}, token) {
   if (!API_ENABLED) throw new Error("Backend is not configured; using local storage fallback.");
   // Authenticated calls always use the current browser token, not a stale
   // token captured in a component closure. A null token is reserved for login.
-  const rawToken = token === null ? "" : storedToken();
+  const rawToken = token === null ? "" : (typeof token === "string" && token.trim() ? token : storedToken());
   const accessToken = String(rawToken).replace(/^Bearer\s+/i, "").trim();
   const requestOptions = {
     ...options,
