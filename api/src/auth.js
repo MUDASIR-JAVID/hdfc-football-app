@@ -15,7 +15,7 @@ function corsHeaders() {
 function json(status, body) { return { status, headers: { "Content-Type": "application/json", ...corsHeaders() }, jsonBody: body }; }
 function tokenFor(subject, role, playerId) {
   const secret = configuredValue("JWT_SECRET_KEY", DEFAULT_JWT_SECRET);
-  return jwt.sign({ sub: subject, role, ...(playerId ? { player_id: playerId } : {}) }, secret, { expiresIn: "1h" });
+  return jwt.sign({ sub: subject, role, ...(playerId ? { player_id: playerId } : {}) }, secret, { expiresIn: "7d" });
 }
 async function authenticate(request) {
   const header = request.headers.get("authorization") || "";

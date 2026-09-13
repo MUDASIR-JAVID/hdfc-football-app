@@ -11,9 +11,9 @@ function storedToken() {
   }
 }
 
-async function request(path, options = {}, token) {
+async function request(path, options = {}, token, attachStoredToken = true) {
   if (!API_ENABLED) throw new Error("Backend is not configured; using local storage fallback.");
-  const accessToken = token || storedToken();
+  const accessToken = token || (attachStoredToken ? storedToken() : "");
   const requestOptions = {
     ...options,
     headers: {
@@ -30,9 +30,6 @@ async function request(path, options = {}, token) {
   }
   // Login failures must not log out an existing session. Also include the
   // token that failed so a stale request cannot clear a newer login.
-  if (response.status === 401 && accessToken) {
-    window.dispatchEvent(new CustomEvent("sdfc-auth-expired", { detail: { token: accessToken } }));
-  }
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
     throw new Error(payload.detail || payload.error || `Request failed (${response.status})`);
@@ -41,7 +38,7 @@ async function request(path, options = {}, token) {
 }
 
 export const api = {
-  login: (username, passcode) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, passcode }) }),
+  login: (username, passcode) => request("/api/auth/login", { method: "POST", body: JSON.stringify({ username, passcode }) }, "", false),
   players: (token) => request("/api/players", {}, token),
   createPlayer: (player, token) => request("/api/players", { method: "POST", body: JSON.stringify(player) }, token),
   deletePlayer: (playerId, token) => request(`/api/players/${encodeURIComponent(playerId)}`, { method: "DELETE" }, token),

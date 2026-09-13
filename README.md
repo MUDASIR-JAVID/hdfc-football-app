@@ -81,4 +81,6 @@ not create tables or seed data automatically. Grant the configured SQL
 principal only the database permissions required by these queries.
 
 All non-login API routes require a JWT. Queries are parameterized, and player
-tokens are checked against active database records.
+tokens are checked against active database records. Admin tokens last seven
+days; changing `JWT_SECRET_KEY` invalidates previously issued tokens, so users
+must sign in again after that setting changes.

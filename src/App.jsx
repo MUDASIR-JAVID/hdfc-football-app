@@ -97,17 +97,6 @@ function App() {
   const authToken = auth?.access_token || auth?.accessToken || "";
 
   useEffect(() => {
-    const handleAuthExpired = (event) => {
-      const failedToken = event.detail?.token;
-      if (!failedToken || failedToken === auth?.access_token || failedToken === auth?.accessToken) {
-        setAuth(null);
-      }
-    };
-    window.addEventListener("sdfc-auth-expired", handleAuthExpired);
-    return () => window.removeEventListener("sdfc-auth-expired", handleAuthExpired);
-  }, [auth?.access_token, auth?.accessToken, setAuth]);
-
-  useEffect(() => {
     if (!API_ENABLED || !authToken) return;
     let cancelled = false;
     setLoadingData(true);
