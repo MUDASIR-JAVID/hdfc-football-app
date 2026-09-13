@@ -97,6 +97,27 @@ function App() {
   const authToken = auth?.access_token || auth?.accessToken || "";
 
   useEffect(() => {
+    if (!API_ENABLED || !auth) return;
+    if (!authToken) {
+      localStorage.removeItem("sdfc-auth-v3");
+      localStorage.removeItem("token");
+      setAuth(null);
+    }
+  }, [auth, authToken, setAuth]);
+
+  useEffect(() => {
+    if (!API_ENABLED) return undefined;
+    const expireSession = () => {
+      localStorage.removeItem("sdfc-auth-v3");
+      localStorage.removeItem("token");
+      setDataError("");
+      setAuth(null);
+    };
+    window.addEventListener("sdfc-auth-expired", expireSession);
+    return () => window.removeEventListener("sdfc-auth-expired", expireSession);
+  }, [setAuth]);
+
+  useEffect(() => {
     if (!API_ENABLED || !authToken) return;
     let cancelled = false;
     setLoadingData(true);

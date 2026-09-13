@@ -31,6 +31,9 @@ async function request(path, options = {}, token) {
   const response = await fetch(`${API_BASE_URL}${path}`, requestOptions);
   if (!response.ok) {
     const payload = await response.json().catch(() => ({}));
+    if (response.status === 401 && token !== null) {
+      window.dispatchEvent(new Event("sdfc-auth-expired"));
+    }
     throw new Error(payload.detail || payload.error || `Request failed (${response.status})`);
   }
   return response.status === 204 ? null : response.json();
