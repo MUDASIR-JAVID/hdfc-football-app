@@ -38,6 +38,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
           app_location: /
+          # The Azure Functions API in api/ is deployed separately.
           api_location: ""
           output_location: dist
           skip_app_build: true

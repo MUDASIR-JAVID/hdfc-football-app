@@ -1,5 +1,5 @@
 export const API_ENABLED = Boolean(import.meta.env.VITE_API_BASE_URL);
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 async function request(path, options = {}, token) {
   if (!API_ENABLED) throw new Error("Backend is not configured; using local storage fallback.");
@@ -11,7 +11,10 @@ async function request(path, options = {}, token) {
       ...options.headers,
     },
   });
-  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || `Request failed (${response.status})`);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.detail || payload.error || `Request failed (${response.status})`);
+  }
   return response.status === 204 ? null : response.json();
 }
 

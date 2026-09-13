@@ -1,0 +1,14 @@
+{
+  "name": "sdfc-football-api",
+  "private": true,
+  "version": "1.0.0",
+  "main": "src/functions/*.js",
+  "scripts": { "start": "func start", "check": "node --check src/functions/routes.js && node --check src/auth.js && node --check src/sql.js" },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@azure/functions": "^4.7.2",
+    "bcryptjs": "^3.0.2",
+    "jsonwebtoken": "^9.0.2",
+    "mssql": "^11.0.1"
+  }
+}

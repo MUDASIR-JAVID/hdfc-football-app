@@ -1,0 +1,41 @@
+const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const { query } = require("./sql");
+
+function corsHeaders() {
+  const origins = process.env.CORS_ORIGINS || "*";
+  return { "Access-Control-Allow-Origin": origins === "*" ? "*" : origins.split(",")[0].trim(), "Access-Control-Allow-Headers": "Content-Type, Authorization", "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS" };
+}
+function json(status, body) { return { status, headers: { "Content-Type": "application/json", ...corsHeaders() }, jsonBody: body }; }
+function tokenFor(subject, role, playerId) {
+  const secret = process.env.JWT_SECRET_KEY;
+  if (!secret || secret.length < 32) throw new Error("JWT_SECRET_KEY must be at least 32 characters");
+  return jwt.sign({ sub: subject, role, ...(playerId ? { player_id: playerId } : {}) }, secret, { expiresIn: "1h" });
+}
+async function authenticate(request) {
+  const header = request.headers.get("authorization") || "";
+  if (!header.toLowerCase().startsWith("bearer ")) return null;
+  try {
+    const payload = jwt.verify(header.slice(7), process.env.JWT_SECRET_KEY);
+    if (!payload.sub || !["admin", "player"].includes(payload.role)) return null;
+    if (payload.role === "player") {
+      const result = await query("SELECT player_id FROM players WHERE player_id = @playerId AND active = 1", { playerId: payload.player_id });
+      if (!result.recordset.length) return null;
+    }
+    return payload;
+  } catch { return null; }
+}
+async function login(request) {
+  const body = await request.json().catch(() => ({}));
+  const username = String(body.username || "").trim();
+  const passcode = String(body.passcode || "");
+  const hash = process.env.ADMIN_PASSCODE_HASH;
+  if (username === (process.env.ADMIN_USERNAME || "admin") && hash && await bcrypt.compare(passcode, hash)) {
+    return json(200, { access_token: tokenFor(username, "admin"), token_type: "bearer", role: "admin" });
+  }
+  const result = await query("SELECT player_id, passcode_hash FROM players WHERE player_id = @playerId AND active = 1", { playerId: username });
+  const player = result.recordset[0];
+  if (!player || !(await bcrypt.compare(passcode, player.passcode_hash))) return json(401, { detail: "Invalid credentials" });
+  return json(200, { access_token: tokenFor(player.player_id, "player", player.player_id), token_type: "bearer", role: "player", player_id: player.player_id });
+}
+module.exports = { authenticate, corsHeaders, json, login };

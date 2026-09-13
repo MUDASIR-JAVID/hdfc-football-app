@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "FUNCTIONS_WORKER_RUNTIME": "node",
+    "AZURE_SQL_CONNECTION_STRING": "Server=tcp:your-server.database.windows.net,1433;Initial Catalog:your-database;User ID=your-user;Password=your-password;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;",
+    "JWT_SECRET_KEY": "replace-with-a-random-string-at-least-32-characters",
+    "ADMIN_USERNAME": "admin",
+    "ADMIN_PASSCODE_HASH": "replace-with-a-bcrypt-hash",
+    "CORS_ORIGINS": "http://localhost:5173"
+  }
+}
