@@ -128,14 +128,14 @@ function App() {
   const [funds, setFunds] = useState([]);
   const [match, setMatch] = useStoredState("sdfc-match-v2", null);
   const [announcements, setAnnouncements] = useState([]);
-  const [clubLogo, setClubLogo] = useStoredState("sdfc-club-logo-v2", "");
-  const [profileImage, setProfileImage] = useStoredState("sdfc-profile-image-v2", "");
-  const [profileImages, setProfileImages] = useStoredState("sdfc-player-images-v1", {});
+  const [clubLogo, setClubLogo] = useState("");
+  const [profileImage, setProfileImage] = useState("");
+  const [profileImages, setProfileImages] = useState({});
   const [fundRequirement, setFundRequirement] = useState(0);
   const [easyPaisaNumber, setEasyPaisaNumber] = useState("03169057203");
   const [paymentRequests, setPaymentRequests] = useState([]);
   const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
-  const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
+  const [wallpaper, setWallpaper] = useState("");
   const [selectedDate, setSelectedDate] = useState(today());
   const notificationUserKey = auth ? `${auth.role || "user"}-${auth.playerId || auth.player_id || auth.name || "account"}` : "anonymous";
   const [readMarkerStore, setReadMarkerStore] = useStoredState("sdfc-notification-read-v1", {});
@@ -173,12 +173,18 @@ function App() {
       const safePlayers = Array.isArray(players) ? players.filter((item) => item && typeof item === "object") : [];
       const safeRecords = Array.isArray(records) ? records.filter((item) => item && item.date && item.playerId) : [];
       setMembers(safePlayers);
+      setProfileImages(safePlayers.reduce((images, player) => player.id && player.avatar ? { ...images, [player.id]: player.avatar } : images, {}));
       setAnnouncements(Array.isArray(notices) ? notices.filter(Boolean) : []);
       setFunds(Array.isArray(ledger) ? ledger.filter(Boolean) : []);
       setPaymentRequests(Array.isArray(requests) ? requests.filter(Boolean) : []);
       setAttendanceRecords(safeRecords);
       setFundRequirement(Number(settings && typeof settings === "object" ? settings.fundRequirement || 0 : 0));
       setEasyPaisaNumber(settings && typeof settings === "object" && settings.easyPaisaNumber ? String(settings.easyPaisaNumber) : "03169057203");
+      if (settings && typeof settings === "object") {
+        if (typeof settings.clubLogo === "string") setClubLogo(settings.clubLogo);
+        if (typeof settings.wallpaper === "string") setWallpaper(settings.wallpaper);
+        if (typeof settings.adminProfileImage === "string") setProfileImage(settings.adminProfileImage);
+      }
       setAttendance(safeRecords.reduce((all, item) => ({ ...all, [item.date]: { ...(all[item.date] || {}), [item.playerId]: item.status } }), {}));
     }).catch((error) => { if (/token|401|expired/i.test(error.message)) { getBrowserStorage()?.removeItem("sdfc-auth-token"); getBrowserStorage()?.removeItem("sdfc-auth-user"); setAuth(null); } });
   }, [auth]);
@@ -188,6 +194,18 @@ function App() {
     if (active === "chat") markSectionRead("chat");
   }, [active, auth, paymentRequests, attendanceRecords, chatMessages]);
   const handleLogin = (nextAuth) => { setAuth(nextAuth.user); getBrowserStorage()?.setItem("sdfc-auth-token", nextAuth.token); getBrowserStorage()?.setItem("sdfc-auth-user", JSON.stringify(nextAuth.user)); };
+  const saveSharedSetting = (key, value, setter) => {
+    setter(value);
+    api("/settings", { method: "PUT", body: JSON.stringify({ [key]: value }) }).catch((error) => console.error(`Unable to save ${key}:`, error));
+  };
+  const saveProfileImage = (image) => {
+    if (!image) return;
+    if (isAdmin) saveSharedSetting("adminProfileImage", image, setProfileImage);
+    else if (currentMember?.id) {
+      setProfileImages((current) => ({ ...(current && typeof current === "object" ? current : {}), [currentMember.id]: image }));
+      api("/profile", { method: "PUT", body: JSON.stringify({ avatar: image }) }).catch((error) => console.error("Unable to save profile image:", error));
+    }
+  };
 
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const totalCollected = funds.filter((fund) => fund.status === "Paid").reduce((sum, fund) => sum + Number(fund.amount), 0);
@@ -271,7 +289,7 @@ function App() {
         <div className="brand">
           <label className={`brand-mark brand-image-control ${!isAdmin ? "brand-readonly" : ""}`} title={isAdmin ? "Upload team logo" : "SDFC logo"}>
             {clubLogo ? <img src={clubLogo} alt="SDFC logo" /> : <Shield size={22} fill="currentColor" />}
-            {isAdmin && <input type="file" accept="image/*" onChange={(event) => readImage(event, setClubLogo)} />}
+            {isAdmin && <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => saveSharedSetting("clubLogo", image, setClubLogo))} />}
           </label>
           <div><strong>SDFC</strong><span>Football Club</span></div>
         </div>
@@ -290,9 +308,9 @@ function App() {
         <div className="sidebar-bottom">
           <label className="profile-mini profile-image-control" title="Upload profile picture">
             <div className={`avatar ${(isAdmin ? profileImage : profileImages?.[currentMember?.id]) ? "avatar-image" : "avatar-green"}`}>{(isAdmin ? profileImage : profileImages?.[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages?.[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div>
-            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : currentMember?.id && setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
+            <input type="file" accept="image/*" onChange={(event) => readImage(event, saveProfileImage)} />
             <div><b>{isAdmin ? ADMIN_NAME : currentMember?.name}</b><span>{isAdmin ? "Team admin" : currentMember?.position || "Squad member"}</span></div>
-            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : currentMember?.id && setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
+            <input type="file" accept="image/*" onChange={(event) => readImage(event, saveProfileImage)} />
           </label>
           <div className="developer">Developer: <b>Mudasir Javid</b><button className="logout-button" onClick={logout}><LogOut size={13} /> Sign out</button></div>
         </div>
@@ -306,7 +324,7 @@ function App() {
         </header>
 
         <div className="page-wrap">
-          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} wallpaper={wallpaper} setWallpaper={setWallpaper} />}
+          {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} wallpaper={wallpaper} setWallpaper={(image) => saveSharedSetting("wallpaper", image, setWallpaper)} />}
           {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
           {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={saveFundSettings} easyPaisaNumber={easyPaisaNumber} setEasyPaisaNumber={saveEasyPaisa} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
           {active === "chat" && <Chat isAdmin={isAdmin} profileImage={profileImage} currentMember={currentMember} members={members} profileImages={profileImages} messages={chatMessages} setMessages={setChatMessages} />}
@@ -477,6 +495,7 @@ function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds
   const [requirementInput, setRequirementInput] = useState(requirement || "");
   const [easyPaisaInput, setEasyPaisaInput] = useState(easyPaisaNumber);
   const safeFunds = Array.isArray(funds) ? funds.filter(Boolean) : [];
+  const approvedFunds = safeFunds.filter((fund) => String(fund.status || "Paid").toLowerCase() === "paid");
   const safeRequests = Array.isArray(requests) ? requests.filter(Boolean) : [];
   const filtered = useMemo(() => [...safeFunds].filter((fund) => `${fund.player || ""} ${fund.note || ""} ${fund.status || ""}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => sort === "amount" ? Number(b.amount || 0) - Number(a.amount || 0) : sort === "player" ? String(a.player || "").localeCompare(String(b.player || "")) : new Date(b.date || 0) - new Date(a.date || 0)), [safeFunds, search, sort]);
   const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; const player = safeMembers.find((item) => item.name === form.player); api("/funds", { method: "POST", body: JSON.stringify({ ...form, playerId: player?.id, amount: Number(form.amount) }) }).then((fund) => { if (!fund || typeof fund !== "object") return; setFunds((current) => [fund, ...(Array.isArray(current) ? current : [])]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); }).catch(() => {}); };
@@ -500,6 +519,7 @@ function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds
       {isAdmin ? <section className="panel fund-settings"><div className="panel-heading"><div><h2>Fund settings</h2><p>Set the team dues amount and official EasyPaisa payment number.</p></div><span className="pill">EasyPaisa</span></div><form className="requirement-form" onSubmit={(event) => { event.preventDefault(); setRequirement(Number(requirementInput) || 0); setEasyPaisaNumber(easyPaisaInput.replace(/\D/g, "").slice(0, 20) || "03169057203"); }}><label>Team requirement (PKR)<input type="number" min="0" value={requirementInput} onChange={(event) => setRequirementInput(event.target.value)} placeholder="e.g. 20000" /></label><label>EasyPaisa account number<input required inputMode="numeric" value={easyPaisaInput} onChange={(event) => setEasyPaisaInput(event.target.value)} placeholder="03169057203" /></label><div className="payment-instructions"><b>Players will send payments to</b><strong>{easyPaisaNumber}</strong></div><button className="primary-button" type="submit"><Check size={16} /> Save settings</button></form></section> : <section className="panel fund-settings"><div className="payment-instructions"><b>Send your payment via EasyPaisa</b><strong>{easyPaisaNumber}</strong><span>Team requirement: {money(requirement || 0)}</span></div><form className="request-form" onSubmit={submitRequest}><input required type="number" min="1" placeholder="Amount paid (PKR)" value={requestForm.amount} onChange={(event) => setRequestForm({ ...requestForm, amount: event.target.value })} /><input placeholder="EasyPaisa reference (optional)" value={requestForm.reference} onChange={(event) => setRequestForm({ ...requestForm, reference: event.target.value })} /><label className="upload-field">Screenshot evidence (required)<input required type="file" accept="image/*" onChange={readEvidence} /></label><button className="primary-button" type="submit"><Check size={16} /> Submit payment request</button>{requestSuccess && <div className="success-banner" role="status">{requestSuccess}</div>}</form></section>}
       {isAdmin && safeRequests.length > 0 && <section className="panel request-panel"><div className="panel-heading"><div><h2>Payment requests</h2><p>Verify EasyPaisa payments and evidence before adding them to the ledger.</p></div><span className="pill">{safeRequests.length} pending</span></div>{safeRequests.map((request) => <div className="request-row" key={request.id || `${request.player || "request"}-${request.date || "unknown"}`}><div><b>{request.player || "Unknown player"}</b><span>{money(request.amount || 0)} · {request.date ? formatDate(String(request.date).slice(0, 10)) : "Date unavailable"} · Ref: {request.reference || "—"}</span>{request.evidence && <img className="payment-evidence" src={request.evidence} alt="Payment evidence" />}</div>{request.id && <button className="primary-button" onClick={() => approveRequest(request)}><Check size={15} /> Approve / Verify</button>}</div>)}</section>}
       {showForm && <section className="panel form-panel"><div className="panel-heading"><div><h2>New contribution</h2><p>Record a payment in the team ledger.</p></div><button className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button></div><form className="fund-form" onSubmit={submit}><label>Player name<select required value={form.player} onChange={(e) => setForm({ ...form, player: e.target.value })}><option value="">Select player</option>{safeMembers.map((player) => <option value={player.name} key={player.id}>{player.name}</option>)}</select></label><label>Amount (PKR)<input required type="number" min="1" placeholder="e.g. 1500" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label>Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label><label>Payment status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Paid</option><option>Pending</option></select></label><label className="wide-field">Note (optional)<input placeholder="Add a note..." value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label><button className="primary-button submit-fund" type="submit" disabled={!safeMembers.length}><Check size={17} /> Save contribution</button></form>{!safeMembers.length && <div className="form-hint">Add a squad member before recording a contribution.</div>}</section>}
+      <section className="panel approved-payments-panel"><div className="panel-heading"><div><h2>Approved payments</h2><p>Verified contributions shared with the whole team.</p></div><span className="pill pill-green">{approvedFunds.length} recorded</span></div>{approvedFunds.length === 0 ? <div className="empty-state compact-empty"><CircleDollarSign size={22} /><b>No approved payments yet</b><span>Verified payments will appear here.</span></div> : <div className="approved-payment-list">{approvedFunds.map((fund) => <div className="approved-payment-row" key={fund.id || `${fund.player || "payment"}-${fund.date || "unknown"}`}><div><b>{fund.player || "Unknown player"}</b><span>{money(fund.amount || 0)} · {fund.date ? formatDate(String(fund.date).slice(0, 10)) : "Date unavailable"}</span></div>{isAdmin && fund.id && <button className="delete-button" onClick={() => onDeleteFund(fund.id)} aria-label={`Delete payment from ${fund.player || "unknown player"}`}><Trash2 size={14} /></button>}</div>)}</div>}</section>
       {isAdmin && <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead><tbody>{filtered.map((fund) => { const fundMember = members.find((member) => member.name === fund.player); return <tr key={fund.id}><td><div className="table-player"><Avatar member={fundMember || { name: fund.player, initials: String(fund.player || "").split(" ").filter(Boolean).map((word) => word[0]).join("").slice(0, 2) }} image={fundMember && profileImages?.[fundMember.id]} /><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td><td><button className="delete-button" onClick={() => onDeleteFund(fund.id)}><Trash2 size={14} /></button></td></tr>; })}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>}
     </>
   );
