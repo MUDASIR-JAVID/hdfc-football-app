@@ -1,4 +1,4 @@
-export const API_ENABLED = Boolean(import.meta.env.VITE_API_BASE_URL);
+export const API_ENABLED = import.meta.env.PROD || Boolean(import.meta.env.VITE_API_BASE_URL);
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
 
 async function request(path, options = {}, token) {
@@ -7,7 +7,7 @@ async function request(path, options = {}, token) {
     ...options,
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(token ? { Authorization: ('Bearer ' + token) } : {}),
       ...options.headers,
     },
   });

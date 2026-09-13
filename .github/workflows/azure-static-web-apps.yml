@@ -1,4 +1,4 @@
-name: Deploy SDFC dashboard to Azure Static Web Apps
+name: Deploy football dashboard to Azure Static Web Apps
 
 on:
   push:
@@ -17,20 +17,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build Vite application
-        run: npm run build
-        env:
-          VITE_API_BASE_URL: ${{ secrets.SDFC_API_BASE_URL }}
-
       - name: Deploy to Azure Static Web Apps
         uses: Azure/static-web-apps-deploy@v1
         with:
@@ -38,7 +24,9 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: upload
           app_location: /
-          # The Azure Functions API in api/ is deployed separately.
-          api_location: ""
+          api_location: api
           output_location: dist
-          skip_app_build: true
+          app_build_command: npm run build
+        env:
+          # Leave unset in production so the UI calls the managed /api endpoint.
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}

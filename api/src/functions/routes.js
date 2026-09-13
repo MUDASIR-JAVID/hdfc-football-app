@@ -13,10 +13,10 @@ const options = () => ({ status: 204, headers: corsHeaders() });
 
 app.http("health", { methods: ["GET", "OPTIONS"], authLevel: "anonymous", route: "health",
   handler: async (request) => request.method === "OPTIONS" ? options() : json(200, { status: "ok" }) });
-app.http("login", { methods: ["POST", "OPTIONS"], authLevel: "anonymous", route: "api/auth/login",
+app.http("login", { methods: ["POST", "OPTIONS"], authLevel: "anonymous", route: "auth/login",
   handler: async (request) => request.method === "OPTIONS" ? options() : login(request) });
 
-app.http("players", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous", route: "api/players",
+app.http("players", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous", route: "players",
   handler: async (request) => {
     if (request.method === "OPTIONS") return options();
     const checked = await access(request, request.method === "POST");
@@ -42,7 +42,7 @@ app.http("players", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous
     }
   } });
 
-app.http("deletePlayer", { methods: ["DELETE", "OPTIONS"], authLevel: "anonymous", route: "api/players/{playerId}",
+app.http("deletePlayer", { methods: ["DELETE", "OPTIONS"], authLevel: "anonymous", route: "players/{playerId}",
   handler: async (request) => {
     if (request.method === "OPTIONS") return options();
     const checked = await access(request, true);
@@ -51,7 +51,7 @@ app.http("deletePlayer", { methods: ["DELETE", "OPTIONS"], authLevel: "anonymous
     return result.rowsAffected[0] ? { status: 204, headers: corsHeaders() } : json(404, { detail: "Player not found" });
   } });
 
-app.http("attendance", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous", route: "api/attendance",
+app.http("attendance", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonymous", route: "attendance",
   handler: async (request) => {
     if (request.method === "OPTIONS") return options();
     const checked = await access(request);
