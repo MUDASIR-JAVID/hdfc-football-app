@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Component, useEffect, useMemo, useState } from "react";
 import {
   ArrowDownUp,
   CalendarDays,
@@ -36,10 +36,12 @@ const today = () => {
   return new Date(date.getTime() - offset * 60 * 1000).toISOString().slice(0, 10);
 };
 const money = (value) => `Rs. ${Number(value).toLocaleString("en-PK")}`;
-const formatDate = (date) =>
-  new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(
-    new Date(`${date}T00:00:00`),
-  );
+const formatDate = (date) => {
+  const parsed = date ? new Date(`${date}T00:00:00`) : null;
+  return parsed && !Number.isNaN(parsed.getTime())
+    ? new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(parsed)
+    : "Date unavailable";
+};
 const getGreeting = () => {
   const hour = new Date().getHours();
   if (hour < 12) return "Good morning";
@@ -50,7 +52,7 @@ const getGreeting = () => {
 const ADMIN_NAME = "Mudasir Javid";
 const api = async (path, options = {}) => {
   const token = getBrowserStorage()?.getItem("sdfc-auth-token");
-  const response = await fetch(`/api${path}`, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) } });
+  const response = await fetch(`/api${path}`, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}), ...(options.headers || {}) } });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     if (response.status === 401) {
@@ -105,6 +107,16 @@ function getBrowserStorage() {
   }
 }
 
+export class ErrorBoundary extends Component {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error) { console.error("SDFC interface error:", error); }
+  render() {
+    if (!this.state.hasError) return this.props.children;
+    return <div className="auth-shell"><div className="auth-card"><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Something went wrong</h1><p>The workspace could not render this view. Refresh to try again.</p><button className="primary-button" onClick={() => window.location.reload()}>Refresh workspace</button></div></div>;
+  }
+}
+
 function App() {
   const [auth, setAuth] = useState(() => { try { return JSON.parse(getBrowserStorage()?.getItem("sdfc-auth-user") || "null"); } catch { return null; } });
   const [active, setActive] = useState("overview");
@@ -124,18 +136,20 @@ function App() {
   const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
   const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
-  const saveFundSettings = (requirement) => { const number = Number(requirement) || 0; setFundRequirement(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement: number, easyPaisaNumber }) }).catch(() => {}); };
-  const saveEasyPaisa = (number) => { setEasyPaisaNumber(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement, easyPaisaNumber: number }) }).catch(() => {}); };
+  const saveFundSettings = (requirement) => { const number = Number(requirement) || 0; setFundRequirement(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement: number, easyPaisaNumber }) }).catch((error) => console.error("Unable to save fund settings:", error)); };
+  const saveEasyPaisa = (number) => { setEasyPaisaNumber(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement, easyPaisaNumber: number }) }).catch((error) => console.error("Unable to save EasyPaisa settings:", error)); };
   useEffect(() => {
     if (!auth) return;
     Promise.all([api("/players"), api("/attendance"), api("/announcements"), api("/funds"), api("/settings"), ...(auth.role === "admin" ? [api("/payment-requests")] : [])]).then(([players, records, notices, ledger, settings, requests]) => {
-      setMembers(Array.isArray(players) ? players : []);
-      setAnnouncements(Array.isArray(notices) ? notices : []);
-      setFunds(Array.isArray(ledger) ? ledger : []);
-      setPaymentRequests(Array.isArray(requests) ? requests : []);
-      setFundRequirement(Number(settings?.fundRequirement || 0));
-      setEasyPaisaNumber(settings?.easyPaisaNumber || "03169057203");
-      setAttendance(records.reduce((all, item) => ({ ...all, [item.date]: { ...(all[item.date] || {}), [item.playerId]: item.status } }), {}));
+      const safePlayers = Array.isArray(players) ? players.filter((item) => item && typeof item === "object") : [];
+      const safeRecords = Array.isArray(records) ? records.filter((item) => item && item.date && item.playerId) : [];
+      setMembers(safePlayers);
+      setAnnouncements(Array.isArray(notices) ? notices.filter(Boolean) : []);
+      setFunds(Array.isArray(ledger) ? ledger.filter(Boolean) : []);
+      setPaymentRequests(Array.isArray(requests) ? requests.filter(Boolean) : []);
+      setFundRequirement(Number(settings && typeof settings === "object" ? settings.fundRequirement || 0 : 0));
+      setEasyPaisaNumber(settings && typeof settings === "object" && settings.easyPaisaNumber ? String(settings.easyPaisaNumber) : "03169057203");
+      setAttendance(safeRecords.reduce((all, item) => ({ ...all, [item.date]: { ...(all[item.date] || {}), [item.playerId]: item.status } }), {}));
     }).catch((error) => { if (/token|401|expired/i.test(error.message)) { getBrowserStorage()?.removeItem("sdfc-auth-token"); getBrowserStorage()?.removeItem("sdfc-auth-user"); setAuth(null); } });
   }, [auth]);
   const handleLogin = (nextAuth) => { setAuth(nextAuth.user); getBrowserStorage()?.setItem("sdfc-auth-token", nextAuth.token); getBrowserStorage()?.setItem("sdfc-auth-user", JSON.stringify(nextAuth.user)); };
@@ -144,28 +158,33 @@ function App() {
   const totalCollected = funds.filter((fund) => fund.status === "Paid").reduce((sum, fund) => sum + Number(fund.amount), 0);
 
   const toggleAttendance = (playerId, status) => {
-    api("/attendance", { method: "PUT", body: JSON.stringify({ playerId, date: selectedDate, status }) }).then(() => setAttendance((current) => ({ ...current, [selectedDate]: { ...(current[selectedDate] || {}), [playerId]: status } }))).catch(() => {});
+    api("/attendance", { method: "PUT", body: JSON.stringify({ playerId, date: selectedDate, status }) }).then(() => setAttendance((current) => ({ ...current, [selectedDate]: { ...(current[selectedDate] || {}), [playerId]: status } }))).catch((error) => console.error("Unable to save attendance:", error));
   };
 
   const addMember = (member) => {
     const name = member.name.trim();
     if (!name) return;
-    const initials = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-    return api("/players", { method: "POST", body: JSON.stringify({ name, position: member.position }) }).then((created) => { setMembers((current) => [...current, created]); return created; });
+    return api("/players", { method: "POST", body: JSON.stringify({ name, position: member.position }) }).then((created) => {
+      if (!created || typeof created !== "object") throw new Error("The server returned an invalid player record.");
+      setMembers((current) => [...(Array.isArray(current) ? current : []), created]);
+      return created;
+    });
   };
 
   const addAnnouncement = (announcement) => {
     if (!announcement.text.trim()) return;
-    return api("/announcements", { method: "POST", body: JSON.stringify(announcement) }).then((created) => setAnnouncements((current) => [created, ...current]));
+    return api("/announcements", { method: "POST", body: JSON.stringify(announcement) }).then((created) => {
+      if (!created || typeof created !== "object") throw new Error("The server returned an invalid announcement.");
+      setAnnouncements((current) => [created, ...(Array.isArray(current) ? current : [])]);
+    });
   };
 
-  const deleteMember = async (id) => {
-    api(`/players/${id}`, { method: "DELETE" }).then(() => setMembers((current) => current.filter((member) => member.id !== id)));
-  };
-  const deleteAnnouncement = (id) => api(`/announcements/${id}`, { method: "DELETE" }).then(() => setAnnouncements((current) => current.filter((item) => item.id !== id)));
-  const deleteFund = (id) => api(`/funds/${id}`, { method: "DELETE" }).then(() => setFunds((current) => current.filter((item) => item.id !== id)));
+  const deleteMember = (id) => api(`/players/${id}`, { method: "DELETE" }).then(() => setMembers((current) => (Array.isArray(current) ? current.filter((member) => member && member.id !== id) : []))).catch((error) => console.error("Unable to delete player:", error));
+  const deleteAnnouncement = (id) => api(`/announcements/${id}`, { method: "DELETE" }).then(() => setAnnouncements((current) => (Array.isArray(current) ? current.filter((item) => item && item.id !== id) : []))).catch((error) => console.error("Unable to delete announcement:", error));
+  const deleteFund = (id) => api(`/funds/${id}`, { method: "DELETE" }).then(() => setFunds((current) => (Array.isArray(current) ? current.filter((item) => item && item.id !== id) : []))).catch((error) => console.error("Unable to delete fund:", error));
   const approveRequest = (request) => {
-    api(`/payment-requests/${request.id}/approve`, { method: "POST" }).then((fund) => { setFunds((current) => [fund, ...current]); setPaymentRequests((current) => current.filter((item) => item.id !== request.id)); });
+    if (!request?.id) return Promise.resolve();
+    return api(`/payment-requests/${request.id}/approve`, { method: "POST" }).then((fund) => { if (!fund || typeof fund !== "object") throw new Error("The server returned an invalid fund record."); setFunds((current) => [fund, ...(Array.isArray(current) ? current : [])]); setPaymentRequests((current) => (Array.isArray(current) ? current.filter((item) => item && item.id !== request.id) : [])); }).catch((error) => console.error("Unable to approve payment request:", error));
   };
 
   const readImage = (event, setter) => {
@@ -230,10 +249,10 @@ function App() {
         </nav>
         <div className="sidebar-bottom">
           <label className="profile-mini profile-image-control" title="Upload profile picture">
-            <div className={`avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : "avatar-green"}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div>
-            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
+            <div className={`avatar ${(isAdmin ? profileImage : profileImages?.[currentMember?.id]) ? "avatar-image" : "avatar-green"}`}>{(isAdmin ? profileImage : profileImages?.[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages?.[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div>
+            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : currentMember?.id && setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
             <div><b>{isAdmin ? ADMIN_NAME : currentMember?.name}</b><span>{isAdmin ? "Team admin" : currentMember?.position || "Squad member"}</span></div>
-            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
+            <input type="file" accept="image/*" onChange={(event) => readImage(event, (image) => isAdmin ? setProfileImage(image) : currentMember?.id && setProfileImages((current) => ({ ...current, [currentMember.id]: image })))} />
           </label>
           <div className="developer">Developer: <b>Mudasir Javid</b><button className="logout-button" onClick={logout}><LogOut size={13} /> Sign out</button></div>
         </div>
@@ -243,7 +262,7 @@ function App() {
         <header className="topbar">
           <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20} /></button>
           <div className="breadcrumb"><span>Team workspace</span><ChevronRight size={14} /><b>{navItems.find((item) => item.id === active)?.label}</b></div>
-          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Synced with Neon</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
+          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Synced with Neon</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages?.[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages?.[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages?.[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
         </header>
 
         <div className="page-wrap">
@@ -284,7 +303,7 @@ function AnnouncementTicker({ announcements }) {
 
 function Overview({ isAdmin, currentMember, members, profileImages, profileImage, present, totalCollected, setActive, addMember, deleteMember, match, setMatch, announcements, addAnnouncement, deleteAnnouncement, wallpaper, setWallpaper }) {
   const [form, setForm] = useState({ name: "", position: "" });
-  const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "", lineup: match?.lineup || [] });
+  const [matchForm, setMatchForm] = useState({ opponent: match?.opponent || "", date: match?.date || "", time: match?.time || "", lineup: Array.isArray(match?.lineup) ? match.lineup : [] });
   const [announcementForm, setAnnouncementForm] = useState({ text: "", cadence: "Anytime" });
   const [credentials, setCredentials] = useState(null);
   const submitMember = (event) => {
@@ -301,7 +320,7 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
   const submitAnnouncement = (event) => {
     event.preventDefault();
     if (!announcementForm.text.trim()) return;
-    addAnnouncement(announcementForm);
+    addAnnouncement(announcementForm).catch((error) => console.error("Unable to publish announcement:", error));
     setAnnouncementForm({ text: "", cadence: "Anytime" });
   };
   return (
@@ -325,14 +344,14 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
         </section>
         <section className="panel match-panel">
           <div className="panel-heading"><div><h2>Next match</h2><p>Set your next fixture manually.</p></div><span className={`pill ${match ? "pill-green" : ""}`}>{match ? "SCHEDULED" : "NOT SET"}</span></div>
-          {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time} {isAdmin && <button className="delete-button" onClick={() => setMatch(null)}><Trash2 size={13} /></button>}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div><div className="lineup-preview"><b>Selected lineup ({match.lineup?.length || 0})</b><div>{(match.lineup || []).map((id) => { const player = members.find((item) => item.id === id); return player && <span className="lineup-chip" key={id}><Avatar member={player} image={profileImages[player.id]} />{player.name}</span>; })}</div></div></div>}
-          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><fieldset className="lineup-select"><legend>Manual lineup ({matchForm.lineup.length}/14)</legend><div className="lineup-checkboxes">{members.length === 0 ? <span className="form-hint">Add registered players first.</span> : members.map((player) => <label key={player.id}><input type="checkbox" checked={matchForm.lineup.includes(player.id)} onChange={() => setMatchForm((current) => current.lineup.includes(player.id) ? { ...current, lineup: current.lineup.filter((id) => id !== player.id) } : current.lineup.length < 14 ? { ...current, lineup: [...current.lineup, player.id] } : current)} /><span>{player.name}</span></label>)}</div></fieldset><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
+          {match && <div className="match-preview"><div className="match-date">{formatDate(match.date)} · {match.time} {isAdmin && <button className="delete-button" onClick={() => setMatch(null)}><Trash2 size={13} /></button>}</div><div className="match-teams"><div><div className="team-badge">S</div><b>SDFC</b></div><span>VS</span><div><div className="team-badge opponent">FC</div><b>{match.opponent}</b></div></div><div className="lineup-preview"><b>Selected lineup ({match.lineup?.length || 0})</b><div>{(Array.isArray(match.lineup) ? match.lineup : []).map((id) => { const player = members.find((item) => item.id === id); return player && <span className="lineup-chip" key={id}><Avatar member={player} image={profileImages?.[player.id]} />{player.name}</span>; })}</div></div></div>}
+          {isAdmin && <form className="match-form" onSubmit={submitMatch}><label>Opponent team<input required value={matchForm.opponent} onChange={(event) => setMatchForm({ ...matchForm, opponent: event.target.value })} placeholder="Enter opponent name" /></label><label>Match date<input required type="date" value={matchForm.date} onChange={(event) => setMatchForm({ ...matchForm, date: event.target.value })} /></label><label>Match time<input required type="time" value={matchForm.time} onChange={(event) => setMatchForm({ ...matchForm, time: event.target.value })} /></label><fieldset className="lineup-select"><legend>Manual lineup ({matchForm.lineup.length}/14)</legend><div className="lineup-checkboxes">{members.length === 0 ? <span className="form-hint">Add registered players first.</span> : members.map((player) => <label key={player.id}><input type="checkbox" checked={matchForm.lineup.includes(player.id)} onChange={() => setMatchForm((current) => { const lineup = Array.isArray(current.lineup) ? current.lineup : []; return lineup.includes(player.id) ? { ...current, lineup: lineup.filter((id) => id !== player.id) } : lineup.length < 14 ? { ...current, lineup: [...lineup, player.id] } : { ...current, lineup }; })} /><span>{player.name}</span></label>)}</div></fieldset><button className="primary-button" type="submit"><Check size={16} /> {match ? "Update match" : "Save match"}</button></form>}
         </section>
       </div>
       {isAdmin && <section className="panel announcement-panel">
         <div className="panel-heading"><div><h2><Megaphone size={17} /> Announcements</h2><p>Publish updates for the whole team.</p></div><span className="pill">{announcements.length} published</span></div>
         <form className="announcement-form" onSubmit={submitAnnouncement}><input required value={announcementForm.text} onChange={(event) => setAnnouncementForm({ ...announcementForm, text: event.target.value })} placeholder="Write a team announcement..." /><select value={announcementForm.cadence} onChange={(event) => setAnnouncementForm({ ...announcementForm, cadence: event.target.value })}><option>Daily</option><option>Weekly</option><option>Anytime</option></select><button className="primary-button" type="submit"><Megaphone size={16} /> Publish</button></form>
-        {announcements.length === 0 ? <div className="empty-state compact-empty"><Megaphone size={22} /><b>No announcements yet</b><span>Publish an update above to show it here.</span></div> : <div className="announcement-list">{announcements.map((announcement) => <div className="announcement-item" key={announcement.id}><Megaphone size={17} /><div><b>{announcement.text}</b><span>{announcement.cadence} · {formatDate(announcement.createdAt.slice(0, 10))}</span></div><button className="delete-button" onClick={() => deleteAnnouncement(announcement.id)}><Trash2 size={14} /></button></div>)}</div>}
+        {announcements.length === 0 ? <div className="empty-state compact-empty"><Megaphone size={22} /><b>No announcements yet</b><span>Publish an update above to show it here.</span></div> : <div className="announcement-list">{announcements.map((announcement) => <div className="announcement-item" key={announcement.id}><Megaphone size={17} /><div><b>{announcement.text}</b><span>{announcement.cadence} · {formatDate(String(announcement.createdAt || "").slice(0, 10))}</span></div><button className="delete-button" onClick={() => deleteAnnouncement(announcement.id)}><Trash2 size={14} /></button></div>)}</div>}
       </section>}
       {isAdmin && credentials && <div className="credential-notice"><b>Player credentials created</b><span>ID: {credentials.playerId} · Passcode: {credentials.passcode}</span><button onClick={() => setCredentials(null)}><X size={15} /></button></div>}
       {isAdmin && <section className="panel member-panel">
@@ -342,7 +361,7 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
           <label>Position / detail<input value={form.position} onChange={(event) => setForm({ ...form, position: event.target.value })} placeholder="e.g. Midfielder" /></label>
           <button className="primary-button" type="submit"><Plus size={17} /> Add member</button>
         </form>
-        {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><Avatar member={member} image={profileImages[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span><small>{member.playerId} · {member.passcode}</small></div><button className="delete-button" onClick={() => deleteMember(member.id)}><Trash2 size={14} /></button></div>)}</div>}
+        {members.length === 0 ? <div className="empty-state compact-empty"><UserRound size={22} /><b>Your squad is empty</b><span>Add your first player above.</span></div> : <div className="member-chips">{members.map((member) => <div className="member-chip" key={member.id}><Avatar member={member} image={profileImages?.[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span><small>{member.playerId} · {member.passcode}</small></div><button className="delete-button" onClick={() => deleteMember(member.id)}><Trash2 size={14} /></button></div>)}</div>}
       </section>}
       {isAdmin && <AdminBackgroundControl wallpaper={wallpaper} setWallpaper={setWallpaper} />}
     </>
@@ -370,7 +389,7 @@ function Avatar({ member, image, className = "" }) {
 }
 
 function OnlineMembers({ members, profileImages, adminImage }) {
-  return <section className="panel online-panel"><div className="panel-heading"><div><h2><Wifi size={16} /> Online members</h2><p>Active in the team workspace</p></div><span className="pill pill-green">{members.length + 1} online</span></div><div className="online-list"><div className="online-member"><div className="online-status" /><Avatar member={{ initials: "MJ" }} image={adminImage} /><div><b>{ADMIN_NAME}</b><span>Team admin</span></div></div>{members.map((member) => <div className="online-member" key={member.id}><div className="online-status" /><Avatar member={member} image={profileImages[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span></div></div>)}</div></section>;
+  return <section className="panel online-panel"><div className="panel-heading"><div><h2><Wifi size={16} /> Team Members</h2><p>Active in the team workspace</p></div><span className="pill pill-green">{members.length + 1} online</span></div><div className="online-list"><div className="online-member"><div className="online-status" /><Avatar member={{ initials: "MJ" }} image={adminImage} /><div><b>{ADMIN_NAME}</b><span>Team admin</span></div></div>{members.map((member) => <div className="online-member" key={member.id}><div className="online-status" /><Avatar member={member} image={profileImages?.[member.id]} /><div><b>{member.name}</b><span>{member.position || "Squad member"}</span></div></div>)}</div></section>;
 }
 
 function Attendance({ isAdmin, currentMember, members, profileImages, attendance, selectedDate, setSelectedDate, toggleAttendance, onExport }) {
@@ -388,27 +407,30 @@ function Attendance({ isAdmin, currentMember, members, profileImages, attendance
         </section>
       </div>
       {!isAdmin && currentMember && <section className="panel self-attendance"><div className="panel-heading"><div><h2>Your attendance</h2><p>{formatDate(today())} · {currentMember.name}</p></div><span className="pill">TODAY</span></div><div className="self-buttons"><button className={attendance[selectedDate]?.[currentMember.id] === "present" ? "status-present" : ""} onClick={() => toggleAttendance(currentMember.id, "present")}><Check size={18} /> Present</button><button className={attendance[selectedDate]?.[currentMember.id] === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(currentMember.id, "absent")}><X size={18} /> Absent</button></div></section>}
-      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Muqalam Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><Avatar member={player} image={profileImages[player.id]} /><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
+      {isAdmin && <section className="panel player-panel"><div className="panel-heading"><div><h2>Muqalam Squad Attendance</h2><p>{formatDate(selectedDate)} · Update each player&apos;s status below.</p></div><span className="pill">{marked} of {members.length} marked</span></div><div className="player-list">{members.length === 0 ? <div className="empty-state compact-empty"><Users size={22} /><b>No squad members yet</b><span>Add players from the Overview page first.</span></div> : members.map((player) => { const status = attendance[selectedDate]?.[player.id]; return <div className="player-row" key={player.id}><Avatar member={player} image={profileImages?.[player.id]} /><div className="player-name"><b>{player.name}</b><span>{player.position || "Squad member"}</span></div><div className="attendance-buttons"><button className={status === "present" ? "status-present" : ""} onClick={() => toggleAttendance(player.id, "present")}><Check size={16} /> Present</button><button className={status === "absent" ? "status-absent" : ""} onClick={() => toggleAttendance(player.id, "absent")}><X size={16} /> Absent</button></div></div>; })}</div></section>}
     </>
   );
 }
 
 function Chat({ isAdmin, profileImage, currentMember, members, profileImages, messages, setMessages }) {
   const [text, setText] = useState("");
+  const safeMessages = Array.isArray(messages) ? messages.filter(Boolean) : [];
+  const safeMembers = Array.isArray(members) ? members.filter(Boolean) : [];
   const sendMessage = (event) => {
     event.preventDefault();
     if (!text.trim()) return;
-    setMessages((current) => [...current, { id: crypto.randomUUID(), text: text.trim(), author: isAdmin ? ADMIN_NAME : currentMember.name, playerId: currentMember?.id, role: isAdmin ? "admin" : "player", createdAt: new Date().toISOString() }]);
+    setMessages((current) => [...(Array.isArray(current) ? current : []), { id: crypto.randomUUID(), text: text.trim(), author: isAdmin ? ADMIN_NAME : currentMember?.name || "Unknown player", playerId: currentMember?.id, role: isAdmin ? "admin" : "player", createdAt: new Date().toISOString() }]);
     setText("");
   };
   const remove = (id) => setMessages((current) => current.filter((message) => message.id !== id));
-  return <><PageHeading eyebrow="TEAM CHAT" title="Chat" description="Messages are shared with the whole team immediately. Admins can delete messages." /><section className="panel chat-panel"><div className="chat-list">{messages.length === 0 && <div className="empty-state"><MessageCircle size={22} /><b>No messages yet</b><span>Start the team conversation.</span></div>}{messages.map((message) => { const member = members.find((item) => item.id === message.playerId); return <div className={`chat-message ${message.role === "admin" ? "chat-admin" : ""}`} key={message.id}><Avatar member={member || { name: message.author, initials: "MJ" }} image={message.role === "admin" ? profileImage : profileImages[message.playerId]} /><div className="chat-bubble"><b>{message.author}{message.role === "admin" && " · Admin"}</b><span>{message.text}</span><small>{new Date(message.createdAt).toLocaleString()}</small></div>{isAdmin && <button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button>}</div>; })}</div><form className="chat-form" onSubmit={sendMessage}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a message..." /><button className="primary-button" type="submit"><Send size={16} /> Send</button></form></section></>;
+  return <><PageHeading eyebrow="TEAM CHAT" title="Chat" description="Messages are shared with the whole team immediately. Admins can delete messages." /><section className="panel chat-panel"><div className="chat-list">{safeMessages.length === 0 && <div className="empty-state"><MessageCircle size={22} /><b>No messages yet</b><span>Start the team conversation.</span></div>}{safeMessages.map((message) => { const member = safeMembers.find((item) => item.id === message.playerId); return <div className={`chat-message ${message.role === "admin" ? "chat-admin" : ""}`} key={message.id}><Avatar member={member || { name: message.author, initials: "MJ" }} image={message.role === "admin" ? profileImage : profileImages?.[message.playerId]} /><div className="chat-bubble"><b>{message.author}{message.role === "admin" && " · Admin"}</b><span>{message.text}</span><small>{new Date(message.createdAt).toLocaleString()}</small></div>{isAdmin && <button className="delete-button" onClick={() => remove(message.id)}><Trash2 size={14} /></button>}</div>; })}</div><form className="chat-form" onSubmit={sendMessage}><input value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a message..." /><button className="primary-button" type="submit"><Send size={16} /> Send</button></form></section></>;
 }
 
 function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds, totalCollected, requirement, setRequirement, easyPaisaNumber, setEasyPaisaNumber, requests, setRequests, approveRequest, onDeleteFund, onExport }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState("date");
   const [showForm, setShowForm] = useState(false);
+  const safeMembers = Array.isArray(members) ? members.filter(Boolean) : [];
   const [form, setForm] = useState({ player: "", amount: "", date: today(), status: "Paid", note: "" });
   const [requestForm, setRequestForm] = useState({ amount: "", reference: "", evidence: "" });
   const [requestSuccess, setRequestSuccess] = useState("");
@@ -417,11 +439,11 @@ function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds
   const safeFunds = Array.isArray(funds) ? funds.filter(Boolean) : [];
   const safeRequests = Array.isArray(requests) ? requests.filter(Boolean) : [];
   const filtered = useMemo(() => [...safeFunds].filter((fund) => `${fund.player || ""} ${fund.note || ""} ${fund.status || ""}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => sort === "amount" ? Number(b.amount || 0) - Number(a.amount || 0) : sort === "player" ? String(a.player || "").localeCompare(String(b.player || "")) : new Date(b.date || 0) - new Date(a.date || 0)), [safeFunds, search, sort]);
-  const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; const player = members.find((item) => item.name === form.player); api("/funds", { method: "POST", body: JSON.stringify({ ...form, playerId: player?.id, amount: Number(form.amount) }) }).then((fund) => { setFunds((current) => [fund, ...current]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); }); };
+  const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; const player = safeMembers.find((item) => item.name === form.player); api("/funds", { method: "POST", body: JSON.stringify({ ...form, playerId: player?.id, amount: Number(form.amount) }) }).then((fund) => { if (!fund || typeof fund !== "object") return; setFunds((current) => [fund, ...(Array.isArray(current) ? current : [])]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); }).catch(() => {}); };
   const submitRequest = (event) => {
     event.preventDefault();
     if (!requestForm.amount || !requestForm.evidence || !currentMember) return;
-    api("/payment-requests", { method: "POST", body: JSON.stringify({ ...requestForm, player: currentMember.name, playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }) })
+    api("/payment-requests", { method: "POST", body: JSON.stringify({ ...requestForm, player: currentMember?.name || "Unknown player", playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }) })
       .then((request) => {
         setRequests((current) => [request, ...current]);
         setRequestForm({ amount: "", reference: "", evidence: "" });
@@ -437,8 +459,8 @@ function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds
       <div className="fund-hero"><div className="fund-hero-copy"><div className="fund-icon"><CircleDollarSign size={25} /></div><div><span>Total collected</span><strong>{money(totalCollected)}</strong><small><TrendingUp size={13} /> Official verified contributions</small></div></div></div>
       {isAdmin ? <section className="panel fund-settings"><div className="panel-heading"><div><h2>Fund settings</h2><p>Set the team dues amount and official EasyPaisa payment number.</p></div><span className="pill">EasyPaisa</span></div><form className="requirement-form" onSubmit={(event) => { event.preventDefault(); setRequirement(Number(requirementInput) || 0); setEasyPaisaNumber(easyPaisaInput.replace(/\D/g, "").slice(0, 20) || "03169057203"); }}><label>Team requirement (PKR)<input type="number" min="0" value={requirementInput} onChange={(event) => setRequirementInput(event.target.value)} placeholder="e.g. 20000" /></label><label>EasyPaisa account number<input required inputMode="numeric" value={easyPaisaInput} onChange={(event) => setEasyPaisaInput(event.target.value)} placeholder="03169057203" /></label><div className="payment-instructions"><b>Players will send payments to</b><strong>{easyPaisaNumber}</strong></div><button className="primary-button" type="submit"><Check size={16} /> Save settings</button></form></section> : <section className="panel fund-settings"><div className="payment-instructions"><b>Send your payment via EasyPaisa</b><strong>{easyPaisaNumber}</strong><span>Team requirement: {money(requirement || 0)}</span></div><form className="request-form" onSubmit={submitRequest}><input required type="number" min="1" placeholder="Amount paid (PKR)" value={requestForm.amount} onChange={(event) => setRequestForm({ ...requestForm, amount: event.target.value })} /><input placeholder="EasyPaisa reference (optional)" value={requestForm.reference} onChange={(event) => setRequestForm({ ...requestForm, reference: event.target.value })} /><label className="upload-field">Screenshot evidence (required)<input required type="file" accept="image/*" onChange={readEvidence} /></label><button className="primary-button" type="submit"><Check size={16} /> Submit payment request</button>{requestSuccess && <div className="success-banner" role="status">{requestSuccess}</div>}</form></section>}
       {isAdmin && safeRequests.length > 0 && <section className="panel request-panel"><div className="panel-heading"><div><h2>Payment requests</h2><p>Verify EasyPaisa payments and evidence before adding them to the ledger.</p></div><span className="pill">{safeRequests.length} pending</span></div>{safeRequests.map((request) => <div className="request-row" key={request.id || `${request.player || "request"}-${request.date || "unknown"}`}><div><b>{request.player || "Unknown player"}</b><span>{money(request.amount || 0)} · {request.date ? formatDate(String(request.date).slice(0, 10)) : "Date unavailable"} · Ref: {request.reference || "—"}</span>{request.evidence && <img className="payment-evidence" src={request.evidence} alt="Payment evidence" />}</div>{request.id && <button className="primary-button" onClick={() => approveRequest(request)}><Check size={15} /> Approve / Verify</button>}</div>)}</section>}
-      {showForm && <section className="panel form-panel"><div className="panel-heading"><div><h2>New contribution</h2><p>Record a payment in the team ledger.</p></div><button className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button></div><form className="fund-form" onSubmit={submit}><label>Player name<select required value={form.player} onChange={(e) => setForm({ ...form, player: e.target.value })}><option value="">Select player</option>{members.map((player) => <option value={player.name} key={player.id}>{player.name}</option>)}</select></label><label>Amount (PKR)<input required type="number" min="1" placeholder="e.g. 1500" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label>Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label><label>Payment status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Paid</option><option>Pending</option></select></label><label className="wide-field">Note (optional)<input placeholder="Add a note..." value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label><button className="primary-button submit-fund" type="submit" disabled={!members.length}><Check size={17} /> Save contribution</button></form>{!members.length && <div className="form-hint">Add a squad member before recording a contribution.</div>}</section>}
-      {isAdmin && <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead><tbody>{filtered.map((fund) => { const fundMember = members.find((member) => member.name === fund.player); return <tr key={fund.id}><td><div className="table-player"><Avatar member={fundMember || { name: fund.player, initials: fund.player.split(" ").map((word) => word[0]).join("").slice(0, 2) }} image={fundMember && profileImages?.[fundMember.id]} /><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td><td><button className="delete-button" onClick={() => onDeleteFund(fund.id)}><Trash2 size={14} /></button></td></tr>; })}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>}
+      {showForm && <section className="panel form-panel"><div className="panel-heading"><div><h2>New contribution</h2><p>Record a payment in the team ledger.</p></div><button className="icon-button" onClick={() => setShowForm(false)}><X size={18} /></button></div><form className="fund-form" onSubmit={submit}><label>Player name<select required value={form.player} onChange={(e) => setForm({ ...form, player: e.target.value })}><option value="">Select player</option>{safeMembers.map((player) => <option value={player.name} key={player.id}>{player.name}</option>)}</select></label><label>Amount (PKR)<input required type="number" min="1" placeholder="e.g. 1500" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></label><label>Date<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></label><label>Payment status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option>Paid</option><option>Pending</option></select></label><label className="wide-field">Note (optional)<input placeholder="Add a note..." value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} /></label><button className="primary-button submit-fund" type="submit" disabled={!safeMembers.length}><Check size={17} /> Save contribution</button></form>{!safeMembers.length && <div className="form-hint">Add a squad member before recording a contribution.</div>}</section>}
+      {isAdmin && <section className="panel ledger-panel"><div className="panel-heading ledger-heading"><div><h2>Contribution ledger</h2><p>Every deposit, clearly accounted for.</p></div><div className="ledger-controls"><label className="search-box"><Search size={16} /><input placeholder="Search ledger..." value={search} onChange={(e) => setSearch(e.target.value)} /></label><button className="sort-button" onClick={() => setSort(sort === "date" ? "amount" : sort === "amount" ? "player" : "date")}><ArrowDownUp size={16} /> Sort</button></div></div><div className="table-wrap"><table><thead><tr><th>PLAYER</th><th>AMOUNT</th><th>DATE</th><th>STATUS</th><th>NOTE</th><th></th></tr></thead><tbody>{filtered.map((fund) => { const fundMember = members.find((member) => member.name === fund.player); return <tr key={fund.id}><td><div className="table-player"><Avatar member={fundMember || { name: fund.player, initials: String(fund.player || "").split(" ").filter(Boolean).map((word) => word[0]).join("").slice(0, 2) }} image={fundMember && profileImages?.[fundMember.id]} /><b>{fund.player}</b></div></td><td><strong>{money(fund.amount)}</strong></td><td>{formatDate(fund.date)}</td><td><span className={`pill ${fund.status === "Paid" ? "pill-green" : "pill-yellow"}`}>{fund.status === "Paid" ? <Check size={12} /> : <Clock3 size={12} />} {fund.status}</span></td><td className="note-cell">{fund.note || "—"}</td><td><button className="delete-button" onClick={() => onDeleteFund(fund.id)}><Trash2 size={14} /></button></td></tr>; })}</tbody></table>{filtered.length === 0 && <div className="empty-state"><Search size={22} /><b>No contributions found</b><span>Try a different search term.</span></div>}</div><div className="ledger-footer"><span>Showing {filtered.length} of {funds.length} contributions</span><b>Paid total: {money(totalCollected)}</b></div></section>}
     </>
   );
 }
