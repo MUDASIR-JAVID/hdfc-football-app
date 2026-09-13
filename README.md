@@ -24,8 +24,11 @@ npm run build
 
 - **Admin:** choose **Admin** and use the local-only passcode `SDFC-ADMIN`.
 - **Player:** an administrator can add a player from **Overview**. The
-  generated Player ID and passcode are displayed once and persisted locally,
-  so the player can sign in again after a reload on the same browser/device.
+  generated Player ID and access code are displayed once and persisted locally.
+  Players can sign in with either value in the single **Player ID or access
+  code** field; no username or second login field is required.
 
 This is intentionally a local convenience login, not a security boundary.
-Clearing browser storage removes the locally stored squad and credentials.
+Clearing browser storage removes the locally stored squad and credentials. If a
+mobile/private browser blocks `localStorage`, the app falls back to
+`sessionStorage` for the current browser session.

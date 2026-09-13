@@ -56,7 +56,7 @@ function useStoredState(key, initial, persist = true) {
   const [value, setValue] = useState(() => {
     if (!persist) return initial;
     try {
-      const stored = localStorage.getItem(key);
+      const stored = getBrowserStorage()?.getItem(key);
       return stored ? JSON.parse(stored) : initial;
     } catch {
       return initial;
@@ -65,13 +65,33 @@ function useStoredState(key, initial, persist = true) {
   useEffect(() => {
     if (!persist) return;
     try {
-      if (value === null || value === undefined) localStorage.removeItem(key);
-      else localStorage.setItem(key, JSON.stringify(value));
+      const storage = getBrowserStorage();
+      if (!storage) return;
+      if (value === null || value === undefined) storage.removeItem(key);
+      else storage.setItem(key, JSON.stringify(value));
     } catch {
       // Storage can be unavailable (private mode or quota exhaustion).
     }
   }, [key, value, persist]);
   return [value, setValue];
+}
+
+function getBrowserStorage() {
+  try {
+    if (window.localStorage) {
+      const probe = "__sdfc_storage_probe__";
+      window.localStorage.setItem(probe, "1");
+      window.localStorage.removeItem(probe);
+      return window.localStorage;
+    }
+  } catch {
+    // Fall back to session storage on restricted mobile/private browsers.
+  }
+  try {
+    return window.sessionStorage;
+  } catch {
+    return null;
+  }
 }
 
 function App() {
@@ -165,7 +185,7 @@ function App() {
   const currentMember = members.find((member) => member.playerId === currentPlayerId);
   const logout = () => {
     try {
-      localStorage.removeItem("sdfc-auth-v3");
+      getBrowserStorage()?.removeItem("sdfc-auth-v3");
     } catch { /* best effort */ }
     setAuth(null);
   };
@@ -224,7 +244,6 @@ function App() {
 function LoginScreen({ members, onLogin }) {
   const [mode, setMode] = useState("player");
   const [credential, setCredential] = useState("");
-  const [playerPasscode, setPlayerPasscode] = useState("");
   const [error, setError] = useState("");
   const submit = async (event) => {
     event.preventDefault();
@@ -233,14 +252,18 @@ function LoginScreen({ members, onLogin }) {
       onLogin({ role: "admin", name: ADMIN_NAME });
       return;
     }
-    const member = members.find((item) => item.playerId === value && item.passcode === playerPasscode.trim());
+    const normalizedCredential = value.toUpperCase();
+    const member = members.find((item) =>
+      item.playerId?.toUpperCase() === normalizedCredential ||
+      item.passcode?.toUpperCase() === normalizedCredential
+    );
     if (mode === "player" && member) {
       onLogin({ role: "player", playerId: member.playerId, name: member.name });
       return;
     }
-    setError(mode === "admin" ? "Invalid admin passcode." : "Invalid Player ID or passcode.");
+    setError(mode === "admin" ? "Invalid admin passcode." : "Invalid Player ID or access code.");
   };
-  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter local admin passcode" : "e.g. SDFC-ABC123"} /></label>{mode === "player" && <label>Player passcode<input required type="password" value={playerPasscode} onChange={(event) => setPlayerPasscode(event.target.value)} /></label>}<button className="primary-button auth-submit" type="submit"><LogIn size={17} /> Sign in</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{mode === "admin" ? "Local-only admin passcode: SDFC-ADMIN." : "Local-only login using credentials stored on this device."}</small></div></div>;
+  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID or access code"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter local admin passcode" : "Enter your ID or access code"} /></label><button className="primary-button auth-submit" type="submit"><LogIn size={17} /> Sign in</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{mode === "admin" ? "Local-only admin passcode: SDFC-ADMIN." : "Use either your Player ID or generated access code."}</small></div></div>;
 }
 
 function PageHeading({ eyebrow, title, description, action }) {
