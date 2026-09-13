@@ -29,6 +29,7 @@ import {
   WalletCards,
   X,
 } from "lucide-react";
+import { api, API_ENABLED } from "./api";
 
 const today = () => {
   const date = new Date();
@@ -50,8 +51,9 @@ const getGreeting = () => {
 const ADMIN_NAME = "Mudasir Javid";
 const ADMIN_PASSCODE = import.meta.env.VITE_ADMIN_PASSCODE || "SDFC-ADMIN";
 
-function useStoredState(key, initial) {
+function useStoredState(key, initial, persist = true) {
   const [value, setValue] = useState(() => {
+    if (!persist) return initial;
     try {
       const stored = localStorage.getItem(key);
       return stored ? JSON.parse(stored) : initial;
@@ -59,17 +61,19 @@ function useStoredState(key, initial) {
       return initial;
     }
   });
-  useEffect(() => localStorage.setItem(key, JSON.stringify(value)), [key, value]);
+  useEffect(() => { if (persist) localStorage.setItem(key, JSON.stringify(value)); }, [key, value, persist]);
   return [value, setValue];
 }
 
 function App() {
-  const [auth, setAuth] = useStoredState("sdfc-auth-v3", null);
+  const [auth, setAuth] = useStoredState("sdfc-auth-v3", null, !API_ENABLED);
   const [active, setActive] = useState("overview");
   const [mobileMenu, setMobileMenu] = useState(false);
   // Versioned keys intentionally start empty so the former demo records cannot leak into the real squad.
-  const [members, setMembers] = useStoredState("sdfc-members-v2", []);
-  const [attendance, setAttendance] = useStoredState("sdfc-attendance-v2", {});
+  const [members, setMembers] = useStoredState("sdfc-members-v2", [], !API_ENABLED);
+  const [attendance, setAttendance] = useStoredState("sdfc-attendance-v2", {}, !API_ENABLED);
+  const [dataError, setDataError] = useState("");
+  const [loadingData, setLoadingData] = useState(false);
   const [funds, setFunds] = useStoredState("sdfc-funds-v2", []);
   const [match, setMatch] = useStoredState("sdfc-match-v2", null);
   const [announcements, setAnnouncements] = useStoredState("sdfc-announcements-v2", []);
@@ -83,23 +87,44 @@ function App() {
   const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
 
+  useEffect(() => {
+    if (!API_ENABLED || !auth?.access_token) return;
+    let cancelled = false;
+    setLoadingData(true);
+    Promise.all([api.players(auth.access_token), api.attendance(auth.access_token)]).then(([players, records]) => {
+      if (cancelled) return;
+      setMembers(players.map((player) => ({ ...player, id: player.player_id, playerId: player.player_id, initials: player.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() })));
+      setAttendance(records.reduce((all, record) => ({ ...all, [record.date]: { ...(all[record.date] || {}), [record.player_id]: record.status } }), {}));
+    }).catch((error) => setDataError(error.message)).finally(() => { if (!cancelled) setLoadingData(false); });
+    return () => { cancelled = true; };
+  }, [auth?.access_token]);
+
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const totalCollected = funds.filter((fund) => fund.status === "Paid").reduce((sum, fund) => sum + Number(fund.amount), 0);
 
-  const toggleAttendance = (playerId, status) => {
+  const toggleAttendance = async (playerId, status) => {
+    if (API_ENABLED) {
+      try { await api.recordAttendance({ player_id: playerId, date: selectedDate, status }, auth.access_token); }
+      catch (error) { setDataError(error.message); return; }
+    }
     setAttendance((current) => ({
       ...current,
       [selectedDate]: { ...(current[selectedDate] || {}), [playerId]: status },
     }));
   };
 
-  const addMember = (member) => {
+  const addMember = async (member) => {
     const name = member.name.trim();
     if (!name) return;
     const initials = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
     const playerId = `SDFC-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const passcode = Math.random().toString(36).slice(2, 8).toUpperCase();
-    setMembers((current) => [...current, { ...member, id: crypto.randomUUID(), playerId, passcode, name, initials }]);
+    const passcode = Math.random().toString(36).slice(2, 10).toUpperCase();
+    if (API_ENABLED) {
+      try {
+        const created = await api.createPlayer({ player_id: playerId, passcode, name, position: member.position || null }, auth.access_token);
+        setMembers((current) => [...current, { ...created, id: created.player_id, playerId: created.player_id, initials }]);
+      } catch (error) { setDataError(error.message); return; }
+    } else setMembers((current) => [...current, { ...member, id: crypto.randomUUID(), playerId, passcode, name, initials }]);
     return { playerId, passcode };
   };
 
@@ -108,7 +133,14 @@ function App() {
     setAnnouncements((current) => [{ id: crypto.randomUUID(), text: announcement.text.trim(), cadence: announcement.cadence, createdAt: new Date().toISOString() }, ...current]);
   };
 
-  const deleteMember = (id) => setMembers((current) => current.filter((member) => member.id !== id));
+  const deleteMember = async (id) => {
+    const member = members.find((item) => item.id === id);
+    if (API_ENABLED) {
+      try { await api.deletePlayer(member.player_id || member.playerId, auth.access_token); }
+      catch (error) { setDataError(error.message); return; }
+    }
+    setMembers((current) => current.filter((member) => member.id !== id));
+  };
   const deleteAnnouncement = (id) => setAnnouncements((current) => current.filter((item) => item.id !== id));
   const deleteFund = (id) => setFunds((current) => current.filter((item) => item.id !== id));
   const approveRequest = (request) => {
@@ -145,7 +177,8 @@ function App() {
   }
 
   const isAdmin = auth.role === "admin";
-  const currentMember = members.find((member) => member.playerId === auth.playerId);
+  const currentPlayerId = auth.playerId || auth.player_id;
+  const currentMember = members.find((member) => member.playerId === currentPlayerId);
   const logout = () => setAuth(null);
 
   return (
@@ -185,10 +218,10 @@ function App() {
         <header className="topbar">
           <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20} /></button>
           <div className="breadcrumb"><span>Team workspace</span><ChevronRight size={14} /><b>{navItems.find((item) => item.id === active)?.label}</b></div>
-          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Data saved locally</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
+          <div className="top-actions"><span className="live-dot"></span><span className="live-text">{API_ENABLED ? "Cloud data connected" : "Data saved locally"}</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
         </header>
 
-        <div className="page-wrap">
+        <div className="page-wrap">{(loadingData || dataError) && <div className="auth-error">{loadingData ? "Loading players and attendance…" : dataError}</div>}
           {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} wallpaper={wallpaper} setWallpaper={setWallpaper} />}
           {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
           {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={setFundRequirement} easyPaisaNumber={easyPaisaNumber} setEasyPaisaNumber={setEasyPaisaNumber} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
@@ -202,10 +235,24 @@ function App() {
 function LoginScreen({ members, onLogin }) {
   const [mode, setMode] = useState("player");
   const [credential, setCredential] = useState("");
+  const [playerPasscode, setPlayerPasscode] = useState("");
   const [error, setError] = useState("");
-  const submit = (event) => {
+  const [loading, setLoading] = useState(false);
+  const submit = async (event) => {
     event.preventDefault();
     const value = credential.trim();
+    if (API_ENABLED) {
+      setLoading(true);
+      try {
+        const result = await api.login(mode === "admin" ? "admin" : value, mode === "admin" ? value : playerPasscode.trim());
+        onLogin({ ...result, name: result.role === "admin" ? ADMIN_NAME : result.player_id });
+      } catch (loginError) {
+        setError(loginError.message || "Invalid credentials.");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (mode === "admin" && value === ADMIN_PASSCODE) {
       onLogin({ role: "admin", name: ADMIN_NAME });
       return;
@@ -217,7 +264,7 @@ function LoginScreen({ members, onLogin }) {
     }
     setError(mode === "admin" ? "Invalid admin passcode." : "Invalid Player ID or passcode.");
   };
-  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID or passcode"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter admin passcode" : "e.g. SDFC-ABC123"} /></label><button className="primary-button auth-submit" type="submit"><LogIn size={17} /> Sign in</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{mode === "admin" ? "Admin credentials are configured with VITE_ADMIN_PASSCODE." : "Ask the admin for your generated Player ID or passcode."}</small></div></div>;
+  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter admin passcode" : "e.g. SDFC-ABC123"} /></label>{API_ENABLED && mode === "player" && <label>Player passcode<input required type="password" value={playerPasscode} onChange={(event) => setPlayerPasscode(event.target.value)} /></label>}<button className="primary-button auth-submit" type="submit" disabled={loading}><LogIn size={17} /> {loading ? "Signing in…" : "Sign in"}</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{API_ENABLED ? "Connected to the team backend." : mode === "admin" ? "Local fallback: admin credentials use VITE_ADMIN_PASSCODE." : "Local fallback: sign in with a locally stored player."}</small></div></div>;
 }
 
 function PageHeading({ eyebrow, title, description, action }) {
