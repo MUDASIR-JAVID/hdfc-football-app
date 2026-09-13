@@ -51,6 +51,13 @@ server-side settings (not Vite variables):
   production.
 - `JWT_SECRET_KEY` must be at least 32 characters or admin login returns a
   configuration error.
+
+Admin login validates these settings before attempting any SQL query. Make sure
+the Azure application setting names contain no trailing spaces:
+`ADMIN_USERNAME`, `ADMIN_PASSCODE` or `ADMIN_PASSCODE_HASH`, and
+`JWT_SECRET_KEY`. If using `ADMIN_PASSCODE_HASH`, it must begin with a valid
+bcrypt prefix such as `$2b$12$`; otherwise the plain `ADMIN_PASSCODE` fallback
+is used.
 - `CORS_ORIGINS`: optional comma-separated origins for direct/local callers;
   same-origin Static Web Apps requests do not require permissive CORS.
 

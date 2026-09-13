@@ -29,17 +29,20 @@ async function login(request) {
   const body = await request.json().catch(() => ({}));
   const username = String(body.username || "").trim();
   const passcode = String(body.passcode || "");
-  const hash = process.env.ADMIN_PASSCODE_HASH;
-  const plainPasscode = process.env.ADMIN_PASSCODE || "SDFC-ADMIN";
+  const adminUsername = String(process.env.ADMIN_USERNAME || "admin").trim();
+  const hash = String(process.env.ADMIN_PASSCODE_HASH || "").trim();
+  const plainPasscode = String(process.env.ADMIN_PASSCODE || "SDFC-ADMIN").trim();
   let adminValid = false;
-  try {
-    adminValid = hash
-      ? await bcrypt.compare(passcode, hash)
-      : passcode === plainPasscode;
-  } catch {
-    adminValid = false;
-  }
-  if (username === (process.env.ADMIN_USERNAME || "admin") && adminValid) {
+  if (username === adminUsername) {
+    try {
+      const looksLikeBcryptHash = /^\$2[aby]?\$\d{2}\$/.test(hash);
+      adminValid = looksLikeBcryptHash
+        ? await bcrypt.compare(passcode, hash)
+        : passcode === plainPasscode;
+    } catch {
+      adminValid = false;
+    }
+    if (!adminValid) return json(401, { detail: "Invalid admin credentials" });
     return json(200, { access_token: tokenFor(username, "admin"), token_type: "bearer", role: "admin" });
   }
   const result = await query("SELECT player_id, passcode_hash FROM players WHERE player_id = @playerId AND active = 1", { playerId: username });
