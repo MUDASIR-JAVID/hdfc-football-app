@@ -61,7 +61,15 @@ function useStoredState(key, initial, persist = true) {
       return initial;
     }
   });
-  useEffect(() => { if (persist) localStorage.setItem(key, JSON.stringify(value)); }, [key, value, persist]);
+  useEffect(() => {
+    if (!persist) return;
+    try {
+      if (value === null || value === undefined) localStorage.removeItem(key);
+      else localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // Storage can be unavailable (private mode or quota exhaustion).
+    }
+  }, [key, value, persist]);
   return [value, setValue];
 }
 
@@ -86,31 +94,45 @@ function App() {
   const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
   const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
+  const authToken = auth?.access_token || auth?.accessToken || "";
 
   useEffect(() => {
-    const handleAuthExpired = () => setAuth(null);
+    const handleAuthExpired = (event) => {
+      const failedToken = event.detail?.token;
+      if (!failedToken || failedToken === auth?.access_token || failedToken === auth?.accessToken) {
+        setAuth(null);
+      }
+    };
     window.addEventListener("sdfc-auth-expired", handleAuthExpired);
     return () => window.removeEventListener("sdfc-auth-expired", handleAuthExpired);
-  }, [setAuth]);
+  }, [auth?.access_token, auth?.accessToken, setAuth]);
 
   useEffect(() => {
-    if (!API_ENABLED || !auth?.access_token) return;
+    if (!API_ENABLED || !authToken) return;
     let cancelled = false;
     setLoadingData(true);
-    Promise.all([api.players(auth.access_token), api.attendance(auth.access_token)]).then(([players, records]) => {
+    const requestToken = authToken;
+    setDataError("");
+    Promise.all([api.players(requestToken), api.attendance(requestToken)]).then(([players, records]) => {
       if (cancelled) return;
       setMembers(players.map((player) => ({ ...player, id: player.player_id, playerId: player.player_id, initials: player.name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() })));
       setAttendance(records.reduce((all, record) => ({ ...all, [record.date]: { ...(all[record.date] || {}), [record.player_id]: record.status } }), {}));
-    }).catch((error) => setDataError(error.message)).finally(() => { if (!cancelled) setLoadingData(false); });
+    }).catch((error) => { if (!cancelled) setDataError(error.message); }).finally(() => { if (!cancelled) setLoadingData(false); });
     return () => { cancelled = true; };
-  }, [auth?.access_token]);
+  }, [authToken]);
+
+  const handleLogin = (nextAuth) => {
+    // Persist before switching the tree to the authenticated application.
+    try { localStorage.setItem("sdfc-auth-v3", JSON.stringify(nextAuth)); } catch { /* best effort */ }
+    setAuth(nextAuth);
+  };
 
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const totalCollected = funds.filter((fund) => fund.status === "Paid").reduce((sum, fund) => sum + Number(fund.amount), 0);
 
   const toggleAttendance = async (playerId, status) => {
     if (API_ENABLED) {
-      try { await api.recordAttendance({ player_id: playerId, date: selectedDate, status }, auth.access_token); }
+      try { await api.recordAttendance({ player_id: playerId, date: selectedDate, status }, authToken); }
       catch (error) { setDataError(error.message); return; }
     }
     setAttendance((current) => ({
@@ -127,7 +149,7 @@ function App() {
     const passcode = Math.random().toString(36).slice(2, 10).toUpperCase();
     if (API_ENABLED) {
       try {
-        const created = await api.createPlayer({ player_id: playerId, passcode, name, position: member.position || null }, auth.access_token);
+        const created = await api.createPlayer({ player_id: playerId, passcode, name, position: member.position || null }, authToken);
         setMembers((current) => [...current, { ...created, id: created.player_id, playerId: created.player_id, initials }]);
       } catch (error) { setDataError(error.message); return; }
     } else setMembers((current) => [...current, { ...member, id: crypto.randomUUID(), playerId, passcode, name, initials }]);
@@ -142,7 +164,7 @@ function App() {
   const deleteMember = async (id) => {
     const member = members.find((item) => item.id === id);
     if (API_ENABLED) {
-      try { await api.deletePlayer(member.player_id || member.playerId, auth.access_token); }
+      try { await api.deletePlayer(member.player_id || member.playerId, authToken); }
       catch (error) { setDataError(error.message); return; }
     }
     setMembers((current) => current.filter((member) => member.id !== id));
@@ -179,7 +201,7 @@ function App() {
   ];
 
   if (!auth) {
-    return <LoginScreen members={members} onLogin={setAuth} />;
+    return <LoginScreen members={members} onLogin={handleLogin} />;
   }
 
   const isAdmin = auth.role === "admin";

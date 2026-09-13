@@ -77,7 +77,12 @@ app.http("attendance", { methods: ["GET", "POST", "OPTIONS"], authLevel: "anonym
         `SELECT a.date, a.status, p.player_id FROM attendance a JOIN players p ON p.id = a.player_id WHERE p.active = 1${requested ? " AND p.player_id = @playerId" : ""} ORDER BY a.date DESC`,
         requested ? { playerId: requested } : {}
       );
-      return json(200, result.recordset.map((row) => ({ ...row, date: row.date.toISOString().slice(0, 10) })));
+      return json(200, result.recordset.map((row) => ({
+        ...row,
+        // mssql normally returns DATE as Date, but drivers/configuration can
+        // return an ISO string instead.
+        date: row.date instanceof Date ? row.date.toISOString().slice(0, 10) : String(row.date).slice(0, 10),
+      })));
     }
     const body = await request.json().catch(() => ({}));
     const playerId = String(body.player_id || "");
