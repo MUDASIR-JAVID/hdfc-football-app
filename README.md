@@ -53,6 +53,10 @@ server-side settings (not Vite variables):
   same-origin Static Web Apps requests do not require permissive CORS.
 
 Set `AZURE_STATIC_WEB_APPS_API_TOKEN` as a GitHub Actions repository secret.
+The workflow references this exact secret name and uses
+`skip_deploy_on_missing_secrets: true`, so builds do not fail with
+`deployment_token was not provided` when the secret has not been configured;
+the deployment step is skipped until the token is added.
 `VITE_API_BASE_URL` is optional and, if needed, should be a non-secret Actions
 variable (`vars.VITE_API_BASE_URL`). Never commit credentials or put SQL/JWT
 settings in `VITE_*` variables, because Vite exposes them to browsers.
