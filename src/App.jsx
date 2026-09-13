@@ -66,7 +66,7 @@ function useStoredState(key, initial, persist = true) {
 }
 
 function App() {
-  const [auth, setAuth] = useStoredState("sdfc-auth-v3", null, !API_ENABLED);
+  const [auth, setAuth] = useStoredState("sdfc-auth-v3", null);
   const [active, setActive] = useState("overview");
   const [mobileMenu, setMobileMenu] = useState(false);
   // Versioned keys intentionally start empty so the former demo records cannot leak into the real squad.
@@ -86,6 +86,12 @@ function App() {
   const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
   const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
+
+  useEffect(() => {
+    const handleAuthExpired = () => setAuth(null);
+    window.addEventListener("sdfc-auth-expired", handleAuthExpired);
+    return () => window.removeEventListener("sdfc-auth-expired", handleAuthExpired);
+  }, [setAuth]);
 
   useEffect(() => {
     if (!API_ENABLED || !auth?.access_token) return;
