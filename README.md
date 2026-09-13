@@ -35,9 +35,9 @@ same-origin `/api` routes. The API keeps the public routes
 The workflow uses `app_location: /`, `api_location: api`, and
 `output_location: dist`. It builds the Vite app and lets Static Web Apps
 install/build the managed API from `api/package.json`. The API's
-`host.json` intentionally uses an empty Functions route prefix because Static
-Web Apps supplies the public `/api` prefix. Function routes therefore must not
-include another `api/` prefix.
+`host.json` uses the required Functions `api` route prefix. Function routes are
+registered without an additional `api/` prefix, so public paths are exposed
+exactly once as `/api/...`.
 
 In the Static Web App **Configuration > Application settings**, add these
 server-side settings (not Vite variables):
