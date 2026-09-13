@@ -1,34 +1,34 @@
 # SDFC Football Club dashboard
 
-SDFC is a local-only React/Vite football team dashboard. All dashboard data,
-player credentials, attendance, funds, announcements, and settings are stored
-in the browser's `localStorage`. No API server, cloud database, remote API
-URL, bearer token, or hosted authentication service is used.
+The dashboard is a React/Vite client served by an Express API. Shared squad
+data is stored centrally in Neon PostgreSQL so all devices see the same
+players, attendance, announcements, and funds.
 
-## Local startup
+## Configuration
 
-Requirements: Node.js 22.12 or newer.
+Copy `.env.example` to `.env` and set:
+
+```text
+DATABASE_URL=postgresql://user:password@host/db?sslmode=require
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+ADMIN_USERNAME=admin
+ADMIN_PASSCODE=replace-with-an-admin-passcode
+PORT=5000
+```
+
+The schema is created idempotently on the first API request. Never commit
+`.env` or real credentials.
+
+## Development and production
 
 ```powershell
 npm install
-npm run dev
-```
-
-Open the local URL printed by Vite. The production build can be checked with:
-
-```powershell
+npm run dev       # Vite development client
 npm run build
+npm start         # Express serves dist on PORT (default 5000)
 ```
 
-## Local sign-in
-
-- **Admin:** choose **Admin** and use the local-only passcode `SDFC-ADMIN`.
-- **Player:** an administrator can add a player from **Overview**. The
-  generated Player ID and access code are displayed once and persisted locally.
-  Players can sign in with either value in the single **Player ID or access
-  code** field; no username or second login field is required.
-
-This is intentionally a local convenience login, not a security boundary.
-Clearing browser storage removes the locally stored squad and credentials. If a
-mobile/private browser blocks `localStorage`, the app falls back to
-`sessionStorage` for the current browser session.
+Admin and player login are database-backed. Administrators create players from
+the Overview page; the generated player ID and access code can be used on any
+device. The browser stores only the bearer session credential (and local UI
+preferences such as images and wallpaper), never shared records.

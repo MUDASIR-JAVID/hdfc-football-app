@@ -48,9 +48,20 @@ const getGreeting = () => {
   return "Good night";
 };
 const ADMIN_NAME = "Mudasir Javid";
-// This dashboard intentionally has no server authentication. The passcode is
-// only a local convenience for the administrator on this device.
-const ADMIN_PASSCODE = "SDFC-ADMIN";
+const api = async (path, options = {}) => {
+  const token = getBrowserStorage()?.getItem("sdfc-auth-token");
+  const response = await fetch(`/api${path}`, { ...options, headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(options.headers || {}) } });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    if (response.status === 401) {
+      const storage = getBrowserStorage();
+      storage?.removeItem("sdfc-auth-token");
+      storage?.removeItem("sdfc-auth-user");
+    }
+    throw new Error(body.error || `Request failed (${response.status})`);
+  }
+  return response.status === 204 ? null : response.json();
+};
 
 function useStoredState(key, initial, persist = true) {
   const [value, setValue] = useState(() => {
@@ -95,61 +106,61 @@ function getBrowserStorage() {
 }
 
 function App() {
-  const [auth, setAuth] = useStoredState("sdfc-auth-v3", null);
+  const [auth, setAuth] = useState(() => { try { return JSON.parse(getBrowserStorage()?.getItem("sdfc-auth-user") || "null"); } catch { return null; } });
   const [active, setActive] = useState("overview");
   const [mobileMenu, setMobileMenu] = useState(false);
   // Versioned keys intentionally start empty so the former demo records cannot leak into the real squad.
-  const [members, setMembers] = useStoredState("sdfc-members-v2", []);
-  const [attendance, setAttendance] = useStoredState("sdfc-attendance-v2", {});
-  const [funds, setFunds] = useStoredState("sdfc-funds-v2", []);
+  const [members, setMembers] = useState([]);
+  const [attendance, setAttendance] = useState({});
+  const [funds, setFunds] = useState([]);
   const [match, setMatch] = useStoredState("sdfc-match-v2", null);
-  const [announcements, setAnnouncements] = useStoredState("sdfc-announcements-v2", []);
+  const [announcements, setAnnouncements] = useState([]);
   const [clubLogo, setClubLogo] = useStoredState("sdfc-club-logo-v2", "");
   const [profileImage, setProfileImage] = useStoredState("sdfc-profile-image-v2", "");
   const [profileImages, setProfileImages] = useStoredState("sdfc-player-images-v1", {});
-  const [fundRequirement, setFundRequirement] = useStoredState("sdfc-fund-requirement-v1", 0);
-  const [easyPaisaNumber, setEasyPaisaNumber] = useStoredState("sdfc-easypaisa-number-v1", "03169057203");
-  const [paymentRequests, setPaymentRequests] = useStoredState("sdfc-payment-requests-v1", []);
+  const [fundRequirement, setFundRequirement] = useState(0);
+  const [easyPaisaNumber, setEasyPaisaNumber] = useState("03169057203");
+  const [paymentRequests, setPaymentRequests] = useState([]);
   const [chatMessages, setChatMessages] = useStoredState("sdfc-chat-v1", []);
   const [wallpaper, setWallpaper] = useStoredState("sdfc-wallpaper-v1", "");
   const [selectedDate, setSelectedDate] = useState(today());
-  const handleLogin = (nextAuth) => {
-    setAuth(nextAuth);
-  };
+  const saveFundSettings = (requirement) => { const number = Number(requirement) || 0; setFundRequirement(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement: number, easyPaisaNumber }) }).catch(() => {}); };
+  const saveEasyPaisa = (number) => { setEasyPaisaNumber(number); api("/settings", { method: "PUT", body: JSON.stringify({ fundRequirement, easyPaisaNumber: number }) }).catch(() => {}); };
+  useEffect(() => {
+    if (!auth) return;
+    Promise.all([api("/players"), api("/attendance"), api("/announcements"), api("/funds"), api("/settings"), ...(auth.role === "admin" ? [api("/payment-requests")] : [])]).then(([players, records, notices, ledger, settings, requests]) => {
+      setMembers(players); setAnnouncements(notices); setFunds(ledger); setPaymentRequests(requests || []); setFundRequirement(Number(settings.fundRequirement || 0)); setEasyPaisaNumber(settings.easyPaisaNumber || "03169057203");
+      setAttendance(records.reduce((all, item) => ({ ...all, [item.date]: { ...(all[item.date] || {}), [item.playerId]: item.status } }), {}));
+    }).catch((error) => { if (/token|401|expired/i.test(error.message)) { getBrowserStorage()?.removeItem("sdfc-auth-token"); getBrowserStorage()?.removeItem("sdfc-auth-user"); setAuth(null); } });
+  }, [auth]);
+  const handleLogin = (nextAuth) => { setAuth(nextAuth.user); getBrowserStorage()?.setItem("sdfc-auth-token", nextAuth.token); getBrowserStorage()?.setItem("sdfc-auth-user", JSON.stringify(nextAuth.user)); };
 
   const present = members.filter((player) => attendance[selectedDate]?.[player.id] === "present").length;
   const totalCollected = funds.filter((fund) => fund.status === "Paid").reduce((sum, fund) => sum + Number(fund.amount), 0);
 
   const toggleAttendance = (playerId, status) => {
-    setAttendance((current) => ({
-      ...current,
-      [selectedDate]: { ...(current[selectedDate] || {}), [playerId]: status },
-    }));
+    api("/attendance", { method: "PUT", body: JSON.stringify({ playerId, date: selectedDate, status }) }).then(() => setAttendance((current) => ({ ...current, [selectedDate]: { ...(current[selectedDate] || {}), [playerId]: status } }))).catch(() => {});
   };
 
   const addMember = (member) => {
     const name = member.name.trim();
     if (!name) return;
     const initials = name.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-    const playerId = `SDFC-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const passcode = Math.random().toString(36).slice(2, 10).toUpperCase();
-    setMembers((current) => [...current, { ...member, id: crypto.randomUUID(), playerId, passcode, name, initials }]);
-    return { playerId, passcode };
+    return api("/players", { method: "POST", body: JSON.stringify({ name, position: member.position }) }).then((created) => { setMembers((current) => [...current, created]); return created; });
   };
 
   const addAnnouncement = (announcement) => {
     if (!announcement.text.trim()) return;
-    setAnnouncements((current) => [{ id: crypto.randomUUID(), text: announcement.text.trim(), cadence: announcement.cadence, createdAt: new Date().toISOString() }, ...current]);
+    return api("/announcements", { method: "POST", body: JSON.stringify(announcement) }).then((created) => setAnnouncements((current) => [created, ...current]));
   };
 
   const deleteMember = async (id) => {
-    setMembers((current) => current.filter((member) => member.id !== id));
+    api(`/players/${id}`, { method: "DELETE" }).then(() => setMembers((current) => current.filter((member) => member.id !== id)));
   };
-  const deleteAnnouncement = (id) => setAnnouncements((current) => current.filter((item) => item.id !== id));
-  const deleteFund = (id) => setFunds((current) => current.filter((item) => item.id !== id));
+  const deleteAnnouncement = (id) => api(`/announcements/${id}`, { method: "DELETE" }).then(() => setAnnouncements((current) => current.filter((item) => item.id !== id)));
+  const deleteFund = (id) => api(`/funds/${id}`, { method: "DELETE" }).then(() => setFunds((current) => current.filter((item) => item.id !== id)));
   const approveRequest = (request) => {
-    setFunds((current) => [{ id: crypto.randomUUID(), player: request.player, amount: Number(request.amount), date: request.date, status: "Paid", note: `EasyPaisa verified (${request.reference || "no reference"})` }, ...current]);
-    setPaymentRequests((current) => current.filter((item) => item.id !== request.id));
+    api(`/payment-requests/${request.id}/approve`, { method: "POST" }).then((fund) => { setFunds((current) => [fund, ...current]); setPaymentRequests((current) => current.filter((item) => item.id !== request.id)); });
   };
 
   const readImage = (event, setter) => {
@@ -177,7 +188,7 @@ function App() {
   ];
 
   if (!auth) {
-    return <LoginScreen members={members} onLogin={handleLogin} />;
+    return     <LoginScreen onLogin={handleLogin} />;
   }
 
   const isAdmin = auth.role === "admin";
@@ -185,7 +196,7 @@ function App() {
   const currentMember = members.find((member) => member.playerId === currentPlayerId);
   const logout = () => {
     try {
-      getBrowserStorage()?.removeItem("sdfc-auth-v3");
+      getBrowserStorage()?.removeItem("sdfc-auth-token"); getBrowserStorage()?.removeItem("sdfc-auth-user");
     } catch { /* best effort */ }
     setAuth(null);
   };
@@ -227,13 +238,13 @@ function App() {
         <header className="topbar">
           <button className="icon-button mobile-toggle" onClick={() => setMobileMenu(!mobileMenu)}><Menu size={20} /></button>
           <div className="breadcrumb"><span>Team workspace</span><ChevronRight size={14} /><b>{navItems.find((item) => item.id === active)?.label}</b></div>
-          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Data saved locally</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
+          <div className="top-actions"><span className="live-dot"></span><span className="live-text">Synced with Neon</span><div className={`top-avatar ${(isAdmin ? profileImage : profileImages[currentMember?.id]) ? "avatar-image" : ""}`}>{(isAdmin ? profileImage : profileImages[currentMember?.id]) ? <img src={isAdmin ? profileImage : profileImages[currentMember.id]} alt="" /> : (isAdmin ? "MJ" : currentMember?.initials || "P")}</div></div>
         </header>
 
         <div className="page-wrap">
           {active === "overview" && <Overview isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} profileImage={profileImage} present={present} totalCollected={totalCollected} setActive={setActive} addMember={addMember} deleteMember={deleteMember} match={match} setMatch={setMatch} announcements={announcements} addAnnouncement={addAnnouncement} deleteAnnouncement={deleteAnnouncement} wallpaper={wallpaper} setWallpaper={setWallpaper} />}
           {active === "attendance" && <Attendance isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} attendance={attendance} selectedDate={selectedDate} setSelectedDate={setSelectedDate} toggleAttendance={toggleAttendance} onExport={() => exportCsv("sdfc-attendance.csv", [["Player", "Position", "Date", "Status"], ...members.map((member) => [member.name, member.position || "Squad member", selectedDate, attendance[selectedDate]?.[member.id] || "Unmarked"])])} />}
-          {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={setFundRequirement} easyPaisaNumber={easyPaisaNumber} setEasyPaisaNumber={setEasyPaisaNumber} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
+          {active === "funds" && <Funds isAdmin={isAdmin} currentMember={currentMember} members={members} profileImages={profileImages} funds={funds} setFunds={setFunds} totalCollected={totalCollected} requirement={fundRequirement} setRequirement={saveFundSettings} easyPaisaNumber={easyPaisaNumber} setEasyPaisaNumber={saveEasyPaisa} requests={paymentRequests} setRequests={setPaymentRequests} approveRequest={approveRequest} onDeleteFund={deleteFund} onExport={() => exportCsv("sdfc-funds.csv", [["Player", "Amount", "Date", "Status", "Note"], ...funds.map((fund) => [fund.player, fund.amount, fund.date, fund.status, fund.note])])} />}
           {active === "chat" && <Chat isAdmin={isAdmin} profileImage={profileImage} currentMember={currentMember} members={members} profileImages={profileImages} messages={chatMessages} setMessages={setChatMessages} />}
         </div>
       </main>
@@ -241,29 +252,19 @@ function App() {
   );
 }
 
-function LoginScreen({ members, onLogin }) {
+function LoginScreen({ onLogin }) {
   const [mode, setMode] = useState("player");
   const [credential, setCredential] = useState("");
   const [error, setError] = useState("");
   const submit = async (event) => {
     event.preventDefault();
     const value = credential.trim();
-    if (mode === "admin" && value === ADMIN_PASSCODE) {
-      onLogin({ role: "admin", name: ADMIN_NAME });
-      return;
-    }
-    const normalizedCredential = value.toUpperCase();
-    const member = members.find((item) =>
-      item.playerId?.toUpperCase() === normalizedCredential ||
-      item.passcode?.toUpperCase() === normalizedCredential
-    );
-    if (mode === "player" && member) {
-      onLogin({ role: "player", playerId: member.playerId, name: member.name });
-      return;
-    }
-    setError(mode === "admin" ? "Invalid admin passcode." : "Invalid Player ID or access code.");
+    try {
+      const result = await api("/login", { method: "POST", body: JSON.stringify({ mode, credential: value }) });
+      onLogin(result);
+    } catch (loginError) { setError(loginError.message || "Invalid credentials."); }
   };
-  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID or access code"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter local admin passcode" : "Enter your ID or access code"} /></label><button className="primary-button auth-submit" type="submit"><LogIn size={17} /> Sign in</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{mode === "admin" ? "Local-only admin passcode: SDFC-ADMIN." : "Use either your Player ID or generated access code."}</small></div></div>;
+  return <div className="auth-shell"><div className="auth-card"><div className="auth-logo"><Shield size={30} fill="currentColor" /></div><div className="eyebrow">SDFC FOOTBALL CLUB</div><h1>Team workspace</h1><p>Sign in to view the squad dashboard.</p><div className="auth-tabs"><button className={mode === "player" ? "active" : ""} onClick={() => { setMode("player"); setError(""); }}>Player</button><button className={mode === "admin" ? "active" : ""} onClick={() => { setMode("admin"); setError(""); }}>Admin</button></div><form onSubmit={submit}><label>{mode === "admin" ? "Admin passcode" : "Player ID or access code"}<input autoFocus required type={mode === "admin" ? "password" : "text"} value={credential} onChange={(event) => setCredential(event.target.value)} placeholder={mode === "admin" ? "Enter admin passcode" : "Enter your ID or access code"} /></label><button className="primary-button auth-submit" type="submit"><LogIn size={17} /> Sign in</button></form>{error && <div className="auth-error"><LockKeyhole size={14} /> {error}</div>}<small className="auth-help">{mode === "admin" ? "Use the configured administrator passcode." : "Use either your Player ID or generated access code."}</small></div></div>;
 }
 
 function PageHeading({ eyebrow, title, description, action }) {
@@ -284,7 +285,7 @@ function Overview({ isAdmin, currentMember, members, profileImages, profileImage
   const submitMember = (event) => {
     event.preventDefault();
     if (!form.name.trim()) return;
-    setCredentials(addMember(form));
+    addMember(form).then(setCredentials).catch((error) => setCredentials({ error: error.message }));
     setForm({ name: "", position: "" });
   };
   const submitMatch = (event) => {
@@ -408,8 +409,8 @@ function Funds({ isAdmin, currentMember, members, profileImages, funds, setFunds
   const [requirementInput, setRequirementInput] = useState(requirement || "");
   const [easyPaisaInput, setEasyPaisaInput] = useState(easyPaisaNumber);
   const filtered = useMemo(() => [...funds].filter((fund) => `${fund.player} ${fund.note} ${fund.status}`.toLowerCase().includes(search.toLowerCase())).sort((a, b) => sort === "amount" ? b.amount - a.amount : sort === "player" ? a.player.localeCompare(b.player) : new Date(b.date) - new Date(a.date)), [funds, search, sort]);
-  const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; setFunds((current) => [{ ...form, id: Date.now(), amount: Number(form.amount) }, ...current]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); };
-  const submitRequest = (event) => { event.preventDefault(); if (!requestForm.amount || !currentMember) return; setRequests((current) => [{ ...requestForm, id: crypto.randomUUID(), player: currentMember.name, playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }, ...current]); setRequestForm({ amount: "", reference: "", evidence: "" }); };
+  const submit = (event) => { event.preventDefault(); if (!form.player || !form.amount) return; const player = members.find((item) => item.name === form.player); api("/funds", { method: "POST", body: JSON.stringify({ ...form, playerId: player?.id, amount: Number(form.amount) }) }).then((fund) => { setFunds((current) => [fund, ...current]); setForm({ player: "", amount: "", date: today(), status: "Paid", note: "" }); setShowForm(false); }); };
+  const submitRequest = (event) => { event.preventDefault(); if (!requestForm.amount || !currentMember) return; api("/payment-requests", { method: "POST", body: JSON.stringify({ ...requestForm, player: currentMember.name, playerId: currentMember.id, amount: Number(requestForm.amount), date: today() }) }).then((request) => { setRequests((current) => [request, ...current]); setRequestForm({ amount: "", reference: "", evidence: "" }); }); };
   const readEvidence = (event) => { const file = event.target.files?.[0]; if (!file || !file.type.startsWith("image/")) return; const reader = new FileReader(); reader.onload = () => setRequestForm((current) => ({ ...current, evidence: reader.result })); reader.readAsDataURL(file); };
   return (
     <>
